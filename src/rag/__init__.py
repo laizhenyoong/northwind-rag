@@ -1,0 +1,1 @@
+"""Northwind RAG learning pipeline."""
