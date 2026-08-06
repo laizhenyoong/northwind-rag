@@ -18,9 +18,10 @@ The pipeline will grow in the same order as `PLAN.md`:
 
 1. `ingestion` loads documents and metadata.
 2. `chunking` will create searchable chunks.
-3. `retrieval` will find relevant chunks.
-4. `generation` will answer only from retrieved context.
-5. `evaluation` will score retrieval and answers separately.
+3. `embeddings` converts chunks and queries into vectors through Ollama.
+4. `retrieval` will find relevant chunks.
+5. `generation` will answer only from retrieved context.
+6. `evaluation` will score retrieval and answers separately.
 
 ## Run tests
 
