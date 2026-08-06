@@ -41,3 +41,25 @@ cp .env.example .env
 
 Set `PINECONE_API_KEY` in `.env`. The application loads this file when it
 connects to Pinecone.
+
+## Index the corpus
+
+With Ollama running and the `embeddinggemma` model installed, create embeddings
+for the baseline 500-character chunks and upload them to Pinecone:
+
+```zsh
+python -m rag.indexing
+```
+
+This can be re-run safely with the same settings: Pinecone upserts records by
+their stable chunk ID. The next step is to query this index for the top five
+semantic matches.
+
+## Retrieve semantic matches
+
+```zsh
+python -m rag.retrieval.semantic "What is the domestic per diem rate for business travel?"
+```
+
+This baseline retrieves by semantic meaning only. It deliberately does not yet
+filter out superseded documents; that is a later metadata-filtering experiment.
