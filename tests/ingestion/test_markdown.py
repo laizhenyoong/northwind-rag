@@ -15,8 +15,8 @@ def test_corpus_loader_preserves_document_metadata() -> None:
         document
         for document in documents
         if document.metadata["document_key"]
-        == "policies/travel-expense-v2.1.md"
+        == "data/policies/travel-expense-v2.1.md"
     )
     assert travel_policy.metadata["status"] == "current"
-    assert travel_policy.metadata["source_path"] == "policies/travel-expense-v2.1.md"
+    assert travel_policy.metadata["source_path"] == "data/policies/travel-expense-v2.1.md"
     assert "per diem" in travel_policy.content.lower()

@@ -33,7 +33,7 @@ def load_markdown_document(path: Path, *, corpus_root: Path) -> Document:
         raise ValueError(f"{path} frontmatter must be a mapping")
 
     normalized_metadata = dict(metadata)
-    source_path = path.relative_to(corpus_root).as_posix()
+    source_path = path.relative_to(corpus_root.parent).as_posix()
     normalized_metadata["source_path"] = source_path
     # `doc_id` can describe a family of versions, and some documents have no
     # version. A path uniquely identifies every file in this fixed corpus.
