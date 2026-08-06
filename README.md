@@ -29,3 +29,15 @@ The pipeline will grow in the same order as `PLAN.md`:
 source .venv/bin/activate
 python -m pytest
 ```
+
+## Pinecone setup
+
+The optional Pinecone index stores vectors created locally by Ollama. Copy the
+safe template, then put the API key in the local Git-ignored file:
+
+```zsh
+cp .env.example .env
+```
+
+Set `PINECONE_API_KEY` in `.env`. The application loads this file when it
+connects to Pinecone.
