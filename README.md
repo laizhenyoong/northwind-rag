@@ -74,3 +74,23 @@ python -m rag.evaluation.run_retrieval
 
 The command reports document-level P@5, Recall@5, MRR, and nDCG@5. The trace
 file is written to `results/retrieval-baseline.jsonl` and is ignored by Git.
+
+## Inspect failures before changing the system
+
+```zsh
+python -m rag.evaluation.analyze_retrieval
+```
+
+This reads the saved trace file locally. It groups hit rates by question concept
+and lists each question whose first relevant source was not rank 1.
+
+## Compare exact-token retrieval
+
+Run the BM25 keyword baseline over the same chunks and gold questions:
+
+```zsh
+python -m rag.evaluation.run_retrieval --strategy keyword
+```
+
+BM25 is an in-memory index. Unlike semantic embeddings, it preserves an exact
+identifier such as `FIN-EXP-22` or `DNV-TA-4471-B` as a matching token.

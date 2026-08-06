@@ -1,6 +1,6 @@
 import json
 
-from rag.evaluation import RetrievedChunk, RunTrace, write_traces
+from rag.evaluation import RetrievedChunk, RunTrace, load_traces, write_traces
 
 
 def test_write_traces_creates_one_json_record_per_question(tmp_path) -> None:
@@ -43,3 +43,18 @@ def test_write_traces_creates_one_json_record_per_question(tmp_path) -> None:
             "error": None,
         },
     ]
+
+
+def test_load_traces_reads_previously_written_jsonl(tmp_path) -> None:
+    trace_path = tmp_path / "traces.jsonl"
+    original = RunTrace(
+        question_id="Q001",
+        question="What is the rate?",
+        pipeline_config={"top_k": 5},
+        retrieved_chunks=(
+            RetrievedChunk("data/policies/travel.md:0000", "data/policies/travel.md", 1, 0.9),
+        ),
+    )
+    write_traces(trace_path, [original])
+
+    assert load_traces(trace_path) == [original]

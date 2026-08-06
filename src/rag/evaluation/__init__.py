@@ -2,7 +2,7 @@
 
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.retrieval_metrics import RetrievalMetrics, score_retrieval
-from rag.evaluation.traces import RetrievedChunk, RunTrace, write_traces
+from rag.evaluation.traces import RetrievedChunk, RunTrace, load_traces, write_traces
 
 __all__ = [
     "GoldQuestion",
@@ -10,6 +10,7 @@ __all__ = [
     "RetrievalMetrics",
     "RunTrace",
     "load_gold_questions",
+    "load_traces",
     "score_retrieval",
     "write_traces",
 ]

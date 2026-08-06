@@ -14,6 +14,7 @@ from rag.embeddings import OllamaEmbedder
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.retrieval_metrics import RetrievalMetrics, score_retrieval
 from rag.evaluation.traces import RunTrace, write_traces
+from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever
 from rag.vector_store import PineconeSettings, ensure_index
 
@@ -120,30 +121,49 @@ def main() -> None:
     """Run the baseline retrieval evaluation from the project root."""
     parser = argparse.ArgumentParser(description="Evaluate Pinecone semantic retrieval")
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
-    parser.add_argument("--output", type=Path, default=Path("results/retrieval-baseline.jsonl"))
+    parser.add_argument("--strategy", choices=("semantic", "keyword"), default="semantic")
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--chunk-size", type=int, default=500)
     arguments = parser.parse_args()
 
-    embedder = OllamaEmbedder()
-    retriever = SemanticRetriever(
-        embedder=embedder,
-        vector_index=ensure_index(PineconeSettings.from_environment()),
+    default_output = (
+        Path("results/retrieval-baseline.jsonl")
+        if arguments.strategy == "semantic"
+        else Path("results/retrieval-keyword.jsonl")
     )
+    output_path = arguments.output or default_output
+    if arguments.strategy == "semantic":
+        embedder = OllamaEmbedder()
+        retriever: Retriever = SemanticRetriever(
+            embedder=embedder,
+            vector_index=ensure_index(PineconeSettings.from_environment()),
+        )
+        pipeline_config = {
+            "retrieval_strategy": "pinecone-semantic",
+            "embedding_model": embedder.model,
+            "chunk_size": arguments.chunk_size,
+            "metadata_filter": None,
+        }
+    else:
+        retriever = KeywordRetriever.from_corpus(
+            Path("data"), chunk_size=arguments.chunk_size
+        )
+        pipeline_config = {
+            "retrieval_strategy": "bm25-keyword",
+            "chunk_size": arguments.chunk_size,
+        }
+
     evaluation = evaluate_retrieval(
         load_gold_questions(arguments.questions),
         retriever=retriever,
         top_k=arguments.top_k,
-        pipeline_config={
-            "retrieval_strategy": "pinecone-semantic",
-            "embedding_model": embedder.model,
-            "chunk_size": 500,
-            "metadata_filter": None,
-        },
+        pipeline_config=pipeline_config,
     )
-    write_traces(arguments.output, list(evaluation.traces))
+    write_traces(output_path, list(evaluation.traces))
     summary = evaluation.summary
     print(
-        f"Wrote {summary.question_count} traces to {arguments.output}. "
+        f"Wrote {summary.question_count} traces to {output_path}. "
         f"P@{arguments.top_k}={summary.mean_precision_at_k:.3f} "
         f"Recall@{arguments.top_k}={summary.mean_recall_at_k:.3f} "
         f"MRR={summary.mean_reciprocal_rank:.3f} "
