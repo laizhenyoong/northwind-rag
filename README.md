@@ -63,3 +63,14 @@ python -m rag.retrieval.semantic "What is the domestic per diem rate for busines
 
 This baseline retrieves by semantic meaning only. It deliberately does not yet
 filter out superseded documents; that is a later metadata-filtering experiment.
+
+## Measure the baseline
+
+Run every gold question and write one inspectable JSONL trace per question:
+
+```zsh
+python -m rag.evaluation.run_retrieval
+```
+
+The command reports document-level P@5, Recall@5, MRR, and nDCG@5. The trace
+file is written to `results/retrieval-baseline.jsonl` and is ignored by Git.
