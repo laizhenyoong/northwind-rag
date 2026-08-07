@@ -51,7 +51,21 @@ def test_index_corpus_embeds_and_upserts_chunks_in_batches(monkeypatch, tmp_path
 
 def test_metadata_for_pinecone_makes_dates_filterable_strings() -> None:
     metadata = _metadata_for_pinecone(
-        {"effective_date": date(2026, 3, 1), "status": "current"}
+        {
+            "doc_id": "POL-FIN-004",
+            "version": "2.1",
+            "effective_date": date(2026, 3, 1),
+            "status": "current",
+        }
     )
 
-    assert metadata == {"effective_date": "2026-03-01", "status": "current"}
+    assert metadata == {
+        "doc_id": "POL-FIN-004",
+        "version": "2.1",
+        "effective_date": "2026-03-01",
+        "status": "current",
+        "effective_date_ordinal": date(2026, 3, 1).toordinal(),
+        "expiry_date_ordinal": date.max.toordinal(),
+        "document_family": "POL-FIN-004",
+        "is_current_version": True,
+    }

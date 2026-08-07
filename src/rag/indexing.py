@@ -96,6 +96,24 @@ def _metadata_for_pinecone(metadata: dict[str, Any]) -> dict[str, str | int | fl
             normalized[key] = value
         else:
             normalized[key] = json.dumps(value, default=str, sort_keys=True)
+
+    # Pinecone compares ranges as numbers, not dates. Keep the readable ISO date
+    # above for inspection and add an ordinal for reliable "as of" filters.
+    effective_date = metadata.get("effective_date")
+    if isinstance(effective_date, datetime | date):
+        normalized["effective_date_ordinal"] = effective_date.toordinal()
+        expiry_date = metadata.get("expiry_date")
+        normalized["expiry_date_ordinal"] = (
+            expiry_date.toordinal()
+            if isinstance(expiry_date, datetime | date)
+            else date.max.toordinal()
+        )
+
+    # doc_id is the stable family identifier shared by document revisions.
+    if isinstance(metadata.get("doc_id"), str):
+        normalized["document_family"] = metadata["doc_id"]
+    if isinstance(metadata.get("version"), str):
+        normalized["is_current_version"] = metadata.get("status") == "current"
     return normalized
 
 

@@ -9,6 +9,12 @@ from typing import Any, Protocol
 
 from rag.embeddings import OllamaEmbedder
 from rag.evaluation.traces import RetrievedChunk
+from rag.retrieval.version_filters import (
+    as_of_date_filter,
+    current_version_filter,
+    exact_version_filter,
+    parse_as_of_date,
+)
 from rag.vector_store import PineconeSettings, ensure_index
 
 
@@ -134,14 +140,40 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Retrieve semantic matches from Pinecone")
     parser.add_argument("question")
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--document-id")
+    version_selection = parser.add_mutually_exclusive_group()
+    version_selection.add_argument("--current", action="store_true")
+    version_selection.add_argument("--version")
+    version_selection.add_argument("--as-of")
     arguments = parser.parse_args()
+
+    if (arguments.current or arguments.version or arguments.as_of) and not arguments.document_id:
+        parser.error("--document-id is required with --current, --version, or --as-of")
+
+    metadata_filter = None
+    if arguments.current:
+        metadata_filter = current_version_filter(arguments.document_id)
+    elif arguments.version:
+        metadata_filter = exact_version_filter(arguments.document_id, arguments.version)
+    elif arguments.as_of:
+        try:
+            metadata_filter = as_of_date_filter(
+                arguments.document_id, parse_as_of_date(arguments.as_of)
+            )
+        except ValueError as error:
+            parser.error(str(error))
 
     retriever = SemanticRetriever(
         embedder=OllamaEmbedder(),
         vector_index=ensure_index(PineconeSettings.from_environment()),
     )
     for rank, passage in enumerate(
-        retriever.retrieve(arguments.question, top_k=arguments.top_k), start=1
+        retriever.retrieve(
+            arguments.question,
+            top_k=arguments.top_k,
+            metadata_filter=metadata_filter,
+        ),
+        start=1,
     ):
         print(
             f"{rank}. score={passage.score:.4f} "

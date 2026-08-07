@@ -106,3 +106,20 @@ python -m rag.evaluation.run_retrieval --strategy hybrid
 
 RRF awards a chunk a small score based on its rank in each list. It avoids
 comparing incompatible cosine and BM25 scores directly.
+
+## Retrieve current or historical versions
+
+Use explicit version constraints when the user asks for a current policy, a
+specific revision, or the policy that applied on a past date:
+
+```zsh
+python -m rag.retrieval.semantic "What is the domestic per diem rate?" \
+  --document-id POL-FIN-004 --current
+
+python -m rag.retrieval.semantic "What was the domestic per diem rate?" \
+  --document-id POL-FIN-004 --as-of 2025-06-01
+```
+
+The index stores each version's document family, current flag, and numeric
+effective/expiry dates. This is an explicit application policy, not something
+the embedding is asked to infer.
