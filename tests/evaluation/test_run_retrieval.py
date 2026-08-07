@@ -1,5 +1,7 @@
 from rag.evaluation import GoldQuestion
-from rag.evaluation.run_retrieval import evaluate_retrieval
+from pathlib import Path
+
+from rag.evaluation.run_retrieval import default_output_path, evaluate_retrieval
 from rag.retrieval import RetrievedPassage
 
 
@@ -60,3 +62,9 @@ def test_evaluate_retrieval_writes_one_trace_per_question_and_averages_scores() 
     assert evaluation.summary.mean_recall_at_k == 1.0
     assert evaluation.summary.mean_reciprocal_rank == 1.0
     assert evaluation.summary.mean_ndcg_at_k == 1.0
+
+
+def test_default_output_path_keeps_retrieval_experiments_separate() -> None:
+    assert default_output_path("semantic") == Path("results/retrieval-baseline.jsonl")
+    assert default_output_path("keyword") == Path("results/retrieval-keyword.jsonl")
+    assert default_output_path("hybrid") == Path("results/retrieval-hybrid.jsonl")

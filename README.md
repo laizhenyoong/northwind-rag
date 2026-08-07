@@ -94,3 +94,15 @@ python -m rag.evaluation.run_retrieval --strategy keyword
 
 BM25 is an in-memory index. Unlike semantic embeddings, it preserves an exact
 identifier such as `FIN-EXP-22` or `DNV-TA-4471-B` as a matching token.
+
+## Combine semantic and keyword retrieval
+
+Run both retrievers, fuse their ranked candidate lists with reciprocal-rank
+fusion (RRF), and evaluate the result:
+
+```zsh
+python -m rag.evaluation.run_retrieval --strategy hybrid
+```
+
+RRF awards a chunk a small score based on its rank in each list. It avoids
+comparing incompatible cosine and BM25 scores directly.

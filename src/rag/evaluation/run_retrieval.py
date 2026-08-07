@@ -14,6 +14,7 @@ from rag.embeddings import OllamaEmbedder
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.retrieval_metrics import RetrievalMetrics, score_retrieval
 from rag.evaluation.traces import RunTrace, write_traces
+from rag.retrieval.hybrid import HybridRetriever
 from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever
 from rag.vector_store import PineconeSettings, ensure_index
@@ -44,6 +45,19 @@ class RetrievalEvaluation:
 
     traces: tuple[RunTrace, ...]
     summary: RetrievalSummary
+
+
+def default_output_path(strategy: str) -> Path:
+    """Keep independent trace files for each retrieval experiment."""
+    paths = {
+        "semantic": Path("results/retrieval-baseline.jsonl"),
+        "keyword": Path("results/retrieval-keyword.jsonl"),
+        "hybrid": Path("results/retrieval-hybrid.jsonl"),
+    }
+    try:
+        return paths[strategy]
+    except KeyError as error:
+        raise ValueError(f"Unknown retrieval strategy: {strategy}") from error
 
 
 def evaluate_retrieval(
@@ -121,32 +135,47 @@ def main() -> None:
     """Run the baseline retrieval evaluation from the project root."""
     parser = argparse.ArgumentParser(description="Evaluate Pinecone semantic retrieval")
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
-    parser.add_argument("--strategy", choices=("semantic", "keyword"), default="semantic")
+    parser.add_argument(
+        "--strategy", choices=("semantic", "keyword", "hybrid"), default="semantic"
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--chunk-size", type=int, default=500)
     arguments = parser.parse_args()
 
-    default_output = (
-        Path("results/retrieval-baseline.jsonl")
-        if arguments.strategy == "semantic"
-        else Path("results/retrieval-keyword.jsonl")
-    )
+    default_output = default_output_path(arguments.strategy)
     output_path = arguments.output or default_output
-    if arguments.strategy == "semantic":
+    if arguments.strategy in {"semantic", "hybrid"}:
         embedder = OllamaEmbedder()
-        retriever: Retriever = SemanticRetriever(
+        semantic_retriever: Retriever = SemanticRetriever(
             embedder=embedder,
             vector_index=ensure_index(PineconeSettings.from_environment()),
         )
-        pipeline_config = {
-            "retrieval_strategy": "pinecone-semantic",
-            "embedding_model": embedder.model,
-            "chunk_size": arguments.chunk_size,
-            "metadata_filter": None,
-        }
+        if arguments.strategy == "semantic":
+            retriever = semantic_retriever
+            pipeline_config = {
+                "retrieval_strategy": "pinecone-semantic",
+                "embedding_model": embedder.model,
+                "chunk_size": arguments.chunk_size,
+                "metadata_filter": None,
+            }
+        else:
+            retriever = HybridRetriever(
+                semantic_retriever=semantic_retriever,
+                keyword_retriever=KeywordRetriever.from_corpus(
+                    Path("data"), chunk_size=arguments.chunk_size
+                ),
+            )
+            pipeline_config = {
+                "retrieval_strategy": "semantic-bm25-rrf",
+                "embedding_model": embedder.model,
+                "chunk_size": arguments.chunk_size,
+                "candidate_k": 20,
+                "rrf_k": 60,
+                "metadata_filter": None,
+            }
     else:
-        retriever = KeywordRetriever.from_corpus(
+        retriever: Retriever = KeywordRetriever.from_corpus(
             Path("data"), chunk_size=arguments.chunk_size
         )
         pipeline_config = {
