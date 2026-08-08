@@ -123,3 +123,21 @@ python -m rag.retrieval.semantic "What was the domestic per diem rate?" \
 The index stores each version's document family, current flag, and numeric
 effective/expiry dates. This is an explicit application policy, not something
 the embedding is asked to infer.
+
+## Synchronize later document changes
+
+Preview the minimum required index changes before applying them:
+
+```zsh
+python -m rag.sync --dry-run
+```
+
+Then apply the sync:
+
+```zsh
+python -m rag.sync
+```
+
+The generated `.rag/ingestion-manifest.json` records hashes and chunk IDs. It
+lets the sync skip unchanged files, update metadata without re-embedding, and
+delete chunks belonging to files removed from the source corpus.
