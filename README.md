@@ -123,6 +123,21 @@ model may refuse with `I don't know based on the provided context.` The trace
 at `results/answer.jsonl` retains the question, retrieved chunks, exact context,
 answer, timing, and any error.
 
+## Evaluate generated answers
+
+Run the same grounded pipeline over the gold questions and write one answer
+trace per question:
+
+```zsh
+python -m rag.evaluation.run_answers
+```
+
+This reports deterministic evidence checks: whether answerable questions got a
+cited answer, whether citations point to an expected source, and whether the
+unanswerable questions received the exact refusal. These are grounding checks,
+not yet a semantic judgement that different wordings have the same meaning.
+Use `--limit 3` for a quick local smoke run.
+
 ## Retrieve current or historical versions
 
 Use explicit version constraints when the user asks for a current policy, a

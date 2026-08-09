@@ -6,10 +6,10 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
+from rag.constants import REFUSAL
 from rag.retrieval.semantic import RetrievedPassage
 
 
-REFUSAL = "I don't know based on the provided context."
 _CITATION_PATTERN = re.compile(r"\[S(\d+)\]")
 
 SYSTEM_PROMPT = """You are a careful question-answering assistant.
