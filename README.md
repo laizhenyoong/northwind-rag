@@ -107,6 +107,22 @@ python -m rag.evaluation.run_retrieval --strategy hybrid
 RRF awards a chunk a small score based on its rank in each list. It avoids
 comparing incompatible cosine and BM25 scores directly.
 
+## Generate a grounded answer
+
+With Ollama running and the locally installed `gemma4` model available, answer
+from the hybrid top-five context and save an inspectable trace:
+
+```zsh
+python -m rag.answer "What is the domestic per diem rate for business travel?"
+```
+
+The model is instructed to use only the supplied chunks. Every factual claim
+must cite a context label such as `[S1]`; unknown or missing labels are
+rejected and saved as an error rather than presented as a grounded answer. A
+model may refuse with `I don't know based on the provided context.` The trace
+at `results/answer.jsonl` retains the question, retrieved chunks, exact context,
+answer, timing, and any error.
+
 ## Retrieve current or historical versions
 
 Use explicit version constraints when the user asks for a current policy, a
