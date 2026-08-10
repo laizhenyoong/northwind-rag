@@ -121,6 +121,20 @@ The first reranking run downloads `BAAI/bge-reranker-v2-m3` to the local
 Hugging Face cache. It is not sent to Ollama or Pinecone. Compare its scores
 with `--strategy hybrid`, especially Q020 and Q021.
 
+## Decompose multi-hop questions
+
+For a question whose answer is split across documents, let the local query
+model create focused sub-queries. Each query retrieves a top-20 candidate set;
+their rankings are fused before optional reranking.
+
+```zsh
+python -m rag.answer --decompose --rerank \
+  "Who will supply the FKM seals for the NH-8840-X, and what lead time improvement is expected?"
+```
+
+The trace stores `queries_used`, so you can inspect exactly how the original
+question was transformed before judging whether the result improved.
+
 ## Generate a grounded answer
 
 With Ollama running and the locally installed `gemma4` model available, answer

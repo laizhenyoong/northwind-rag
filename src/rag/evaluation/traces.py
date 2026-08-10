@@ -26,6 +26,7 @@ class RunTrace:
     question: str
     pipeline_config: dict[str, Any]
     retrieved_chunks: tuple[RetrievedChunk, ...]
+    queries_used: tuple[str, ...] = ()
     context_sent_to_model: str | None = None
     answer: str | None = None
     timing_ms: int | None = None
@@ -55,6 +56,7 @@ def load_traces(path: Path) -> list[RunTrace]:
                     retrieved_chunks=tuple(
                         RetrievedChunk(**chunk) for chunk in record["retrieved_chunks"]
                     ),
+                    queries_used=tuple(record.get("queries_used", [])),
                     context_sent_to_model=record.get("context_sent_to_model"),
                     answer=record.get("answer"),
                     timing_ms=record.get("timing_ms"),

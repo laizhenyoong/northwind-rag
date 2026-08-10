@@ -64,12 +64,14 @@ def answer_question(
     retrieved_chunks = tuple(
         passage.as_trace_chunk(rank=rank) for rank, passage in enumerate(passages, start=1)
     )
+    queries_used = tuple(getattr(retriever, "last_queries", ()) or (question,))
     context = generated_answer.context if generated_answer else build_context(passages)
     trace = RunTrace(
         question_id=question_id,
         question=question,
         pipeline_config={**pipeline_config, "top_k": top_k, "metadata_filter": metadata_filter},
         retrieved_chunks=retrieved_chunks,
+        queries_used=queries_used,
         context_sent_to_model=context or None,
         answer=generated_answer.text if generated_answer else None,
         timing_ms=round((time.perf_counter() - started_at) * 1000),

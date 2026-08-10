@@ -19,6 +19,8 @@ from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever
 from rag.reranking import BGEReranker
+from rag.query_transformation import OllamaQueryDecomposer, QueryDecompositionRetriever
+from rag.generation.ollama import OllamaChatModel
 from rag.vector_store import PineconeSettings, ensure_index
 
 
@@ -56,6 +58,8 @@ def default_output_path(strategy: str) -> Path:
         "keyword": Path("results/retrieval-keyword.jsonl"),
         "hybrid": Path("results/retrieval-hybrid.jsonl"),
         "hybrid-reranked": Path("results/retrieval-hybrid-reranked.jsonl"),
+        "hybrid-decomposed": Path("results/retrieval-hybrid-decomposed.jsonl"),
+        "hybrid-decomposed-reranked": Path("results/retrieval-hybrid-decomposed-reranked.jsonl"),
     }
     try:
         return paths[strategy]
@@ -88,8 +92,10 @@ def evaluate_retrieval(
                 passage.as_trace_chunk(rank=rank)
                 for rank, passage in enumerate(passages, start=1)
             )
+            queries_used = tuple(getattr(retriever, "last_queries", ()) or (gold_question.question,))
         except Exception as exception:  # Save the failure as an inspectable trace.
             error = f"{type(exception).__name__}: {exception}"
+            queries_used = (gold_question.question,)
 
         timing_ms = round((time.perf_counter() - started_at) * 1000)
         traces.append(
@@ -98,6 +104,7 @@ def evaluate_retrieval(
                 question=gold_question.question,
                 pipeline_config={**pipeline_config, "top_k": top_k},
                 retrieved_chunks=retrieved_chunks,
+                queries_used=queries_used,
                 timing_ms=timing_ms,
                 error=error,
             )
@@ -140,18 +147,32 @@ def main() -> None:
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
     parser.add_argument(
         "--strategy",
-        choices=("semantic", "keyword", "hybrid", "hybrid-reranked"),
+        choices=(
+            "semantic",
+            "keyword",
+            "hybrid",
+            "hybrid-reranked",
+            "hybrid-decomposed",
+            "hybrid-decomposed-reranked",
+        ),
         default="semantic",
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--chunk-size", type=int, default=500)
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
+    parser.add_argument("--query-model", default="gemma4")
     arguments = parser.parse_args()
 
     default_output = default_output_path(arguments.strategy)
     output_path = arguments.output or default_output
-    if arguments.strategy in {"semantic", "hybrid", "hybrid-reranked"}:
+    if arguments.strategy in {
+        "semantic",
+        "hybrid",
+        "hybrid-reranked",
+        "hybrid-decomposed",
+        "hybrid-decomposed-reranked",
+    }:
         embedder = OllamaEmbedder()
         semantic_retriever: Retriever = SemanticRetriever(
             embedder=embedder,
@@ -180,7 +201,18 @@ def main() -> None:
                 "rrf_k": 60,
                 "metadata_filter": None,
             }
-            if arguments.strategy == "hybrid-reranked":
+            if arguments.strategy in {"hybrid-decomposed", "hybrid-decomposed-reranked"}:
+                hybrid_retriever = QueryDecompositionRetriever(
+                    candidate_retriever=hybrid_retriever,
+                    decomposer=OllamaQueryDecomposer(OllamaChatModel(model=arguments.query_model)),
+                )
+                pipeline_config.update(
+                    {
+                        "retrieval_strategy": "semantic-bm25-rrf-query-decomposition",
+                        "query_model": arguments.query_model,
+                    }
+                )
+            if arguments.strategy in {"hybrid-reranked", "hybrid-decomposed-reranked"}:
                 retriever = RerankingRetriever(
                     candidate_retriever=hybrid_retriever,
                     reranker=BGEReranker(model_name=arguments.reranker_model),

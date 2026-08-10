@@ -41,6 +41,11 @@ class RerankingRetriever:
         if self.candidate_k < 1:
             raise ValueError("candidate_k must be at least 1")
 
+    @property
+    def last_queries(self) -> tuple[str, ...]:
+        """Expose upstream transformed queries for the trace writer."""
+        return getattr(self.candidate_retriever, "last_queries", ())
+
     def retrieve(
         self,
         question: str,

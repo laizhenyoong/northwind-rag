@@ -19,6 +19,7 @@ from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import SemanticRetriever
 from rag.reranking import BGEReranker
+from rag.query_transformation import OllamaQueryDecomposer, QueryDecompositionRetriever
 from rag.vector_store import PineconeSettings, ensure_index
 
 
@@ -62,6 +63,8 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rerank", action="store_true")
+    parser.add_argument("--decompose", action="store_true")
+    parser.add_argument("--query-model", default="gemma4")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--chunk-size", type=int, default=500)
     parser.add_argument("--limit", type=int)
@@ -84,14 +87,23 @@ def main() -> None:
         ),
         candidate_k=arguments.candidate_k,
     )
+    candidate_retriever = (
+        QueryDecompositionRetriever(
+            candidate_retriever=hybrid_retriever,
+            decomposer=OllamaQueryDecomposer(OllamaChatModel(model=arguments.query_model)),
+            candidate_k=arguments.candidate_k,
+        )
+        if arguments.decompose
+        else hybrid_retriever
+    )
     retriever = (
         RerankingRetriever(
-            candidate_retriever=hybrid_retriever,
+            candidate_retriever=candidate_retriever,
             reranker=BGEReranker(model_name=arguments.reranker_model),
             candidate_k=arguments.candidate_k,
         )
         if arguments.rerank
-        else hybrid_retriever
+        else candidate_retriever
     )
     evaluation = run_answer_evaluation(
         questions,
@@ -106,6 +118,7 @@ def main() -> None:
             "candidate_k": arguments.candidate_k,
             "rrf_k": 60,
             "reranker_model": arguments.reranker_model if arguments.rerank else None,
+            "query_model": arguments.query_model if arguments.decompose else None,
         },
     )
     write_traces(arguments.output, list(evaluation.traces))

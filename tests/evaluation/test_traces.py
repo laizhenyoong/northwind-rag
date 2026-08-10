@@ -17,6 +17,7 @@ def test_write_traces_creates_one_json_record_per_question(tmp_path) -> None:
                 score=0.87,
             ),
         ),
+        queries_used=("What is the domestic per diem rate?",),
         answer="RM 180 per day.",
         timing_ms=420,
     )
@@ -37,6 +38,7 @@ def test_write_traces_creates_one_json_record_per_question(tmp_path) -> None:
                     "score": 0.87,
                 },
             ],
+            "queries_used": ["What is the domestic per diem rate?"],
             "context_sent_to_model": None,
             "answer": "RM 180 per day.",
             "timing_ms": 420,

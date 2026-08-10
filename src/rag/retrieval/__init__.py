@@ -4,6 +4,7 @@ from typing import Any
 
 __all__ = [
     "HybridRetriever",
+    "QueryDecompositionRetriever",
     "RerankingRetriever",
     "RetrievedPassage",
     "SemanticRetriever",
@@ -16,10 +17,12 @@ def __getattr__(name: str) -> Any:
     if name in __all__:
         from rag.retrieval.hybrid import HybridRetriever
         from rag.retrieval.reranked import RerankingRetriever
+        from rag.query_transformation import QueryDecompositionRetriever
         from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever, build_context
 
         return {
             "HybridRetriever": HybridRetriever,
+            "QueryDecompositionRetriever": QueryDecompositionRetriever,
             "RerankingRetriever": RerankingRetriever,
             "RetrievedPassage": RetrievedPassage,
             "SemanticRetriever": SemanticRetriever,
