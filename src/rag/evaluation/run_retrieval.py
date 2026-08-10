@@ -16,7 +16,9 @@ from rag.evaluation.retrieval_metrics import RetrievalMetrics, score_retrieval
 from rag.evaluation.traces import RunTrace, write_traces
 from rag.retrieval.hybrid import HybridRetriever
 from rag.retrieval.keyword import KeywordRetriever
+from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever
+from rag.reranking import BGEReranker
 from rag.vector_store import PineconeSettings, ensure_index
 
 
@@ -53,6 +55,7 @@ def default_output_path(strategy: str) -> Path:
         "semantic": Path("results/retrieval-baseline.jsonl"),
         "keyword": Path("results/retrieval-keyword.jsonl"),
         "hybrid": Path("results/retrieval-hybrid.jsonl"),
+        "hybrid-reranked": Path("results/retrieval-hybrid-reranked.jsonl"),
     }
     try:
         return paths[strategy]
@@ -136,16 +139,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate Pinecone semantic retrieval")
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
     parser.add_argument(
-        "--strategy", choices=("semantic", "keyword", "hybrid"), default="semantic"
+        "--strategy",
+        choices=("semantic", "keyword", "hybrid", "hybrid-reranked"),
+        default="semantic",
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--chunk-size", type=int, default=500)
+    parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     arguments = parser.parse_args()
 
     default_output = default_output_path(arguments.strategy)
     output_path = arguments.output or default_output
-    if arguments.strategy in {"semantic", "hybrid"}:
+    if arguments.strategy in {"semantic", "hybrid", "hybrid-reranked"}:
         embedder = OllamaEmbedder()
         semantic_retriever: Retriever = SemanticRetriever(
             embedder=embedder,
@@ -160,13 +166,13 @@ def main() -> None:
                 "metadata_filter": None,
             }
         else:
-            retriever = HybridRetriever(
+            hybrid_retriever = HybridRetriever(
                 semantic_retriever=semantic_retriever,
                 keyword_retriever=KeywordRetriever.from_corpus(
                     Path("data"), chunk_size=arguments.chunk_size
                 ),
             )
-            pipeline_config = {
+            pipeline_config: dict[str, Any] = {
                 "retrieval_strategy": "semantic-bm25-rrf",
                 "embedding_model": embedder.model,
                 "chunk_size": arguments.chunk_size,
@@ -174,6 +180,19 @@ def main() -> None:
                 "rrf_k": 60,
                 "metadata_filter": None,
             }
+            if arguments.strategy == "hybrid-reranked":
+                retriever = RerankingRetriever(
+                    candidate_retriever=hybrid_retriever,
+                    reranker=BGEReranker(model_name=arguments.reranker_model),
+                )
+                pipeline_config.update(
+                    {
+                        "retrieval_strategy": "semantic-bm25-rrf-bge-reranker",
+                        "reranker_model": arguments.reranker_model,
+                    }
+                )
+            else:
+                retriever = hybrid_retriever
     else:
         retriever: Retriever = KeywordRetriever.from_corpus(
             Path("data"), chunk_size=arguments.chunk_size

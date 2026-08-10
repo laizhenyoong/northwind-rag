@@ -107,6 +107,20 @@ python -m rag.evaluation.run_retrieval --strategy hybrid
 RRF awards a chunk a small score based on its rank in each list. It avoids
 comparing incompatible cosine and BM25 scores directly.
 
+## Rerank the hybrid candidates
+
+The optional local BGE cross-encoder reads each question and candidate chunk
+together, then reorders the hybrid top 20 before we keep the final five:
+
+```zsh
+python -m rag.evaluation.run_retrieval --strategy hybrid-reranked
+python -m rag.answer --rerank "What is the maximum flow for NH-8840-X?"
+```
+
+The first reranking run downloads `BAAI/bge-reranker-v2-m3` to the local
+Hugging Face cache. It is not sent to Ollama or Pinecone. Compare its scores
+with `--strategy hybrid`, especially Q020 and Q021.
+
 ## Generate a grounded answer
 
 With Ollama running and the locally installed `gemma4` model available, answer
