@@ -169,6 +169,14 @@ The index stores each version's document family, current flag, and numeric
 effective/expiry dates. This is an explicit application policy, not something
 the embedding is asked to infer.
 
+The same constraints now apply to hybrid retrieval, reranking, and grounded
+answers, so all stages receive only the selected version:
+
+```zsh
+python -m rag.answer --rerank --document-id POL-FIN-004 --current \
+  "What is the current domestic per diem rate?"
+```
+
 ## Synchronize later document changes
 
 Preview the minimum required index changes before applying them:

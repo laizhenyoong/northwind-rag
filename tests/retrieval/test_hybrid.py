@@ -7,8 +7,8 @@ class FakeRetriever:
         self.passages = passages
         self.calls = []
 
-    def retrieve(self, question: str, *, top_k: int) -> list[RetrievedPassage]:
-        self.calls.append((question, top_k))
+    def retrieve(self, question: str, *, top_k: int, metadata_filter=None) -> list[RetrievedPassage]:
+        self.calls.append((question, top_k, metadata_filter))
         return self.passages[:top_k]
 
 
@@ -29,6 +29,18 @@ def test_hybrid_retriever_rewards_a_chunk_found_by_both_systems() -> None:
     passages = retriever.retrieve("Which form?", top_k=2)
 
     assert [passage.chunk_id for passage in passages] == ["shared", "semantic-only"]
-    assert semantic.calls == [("Which form?", 2)]
-    assert keyword.calls == [("Which form?", 2)]
+    assert semantic.calls == [("Which form?", 2, None)]
+    assert keyword.calls == [("Which form?", 2, None)]
     assert passages[0].score == 1 / 62 + 1 / 61
+
+
+def test_hybrid_retriever_passes_metadata_filter_to_both_searches() -> None:
+    semantic = FakeRetriever([passage("shared")])
+    keyword = FakeRetriever([passage("shared")])
+    retriever = HybridRetriever(semantic, keyword, candidate_k=1)
+    metadata_filter = {"is_current_version": {"$eq": True}}
+
+    retriever.retrieve("Which form?", top_k=1, metadata_filter=metadata_filter)
+
+    assert semantic.calls == [("Which form?", 1, metadata_filter)]
+    assert keyword.calls == [("Which form?", 1, metadata_filter)]

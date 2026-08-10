@@ -24,3 +24,32 @@ def test_keyword_retriever_ranks_an_exact_rare_token_first() -> None:
 
     assert [passage.chunk_id for passage in passages] == ["b"]
     assert passages[0].metadata["source_path"] == "new.md"
+
+
+def test_keyword_retriever_applies_the_same_version_filter_as_semantic_search() -> None:
+    retriever = KeywordRetriever(
+        (
+            Chunk(
+                "old",
+                "Domestic per diem rate.",
+                {"document_family": "POL-FIN-004", "is_current_version": False},
+            ),
+            Chunk(
+                "current",
+                "Domestic per diem rate.",
+                {"document_family": "POL-FIN-004", "is_current_version": True},
+            ),
+        )
+    )
+
+    passages = retriever.retrieve(
+        "Domestic per diem rate",
+        metadata_filter={
+            "$and": [
+                {"document_family": {"$eq": "POL-FIN-004"}},
+                {"is_current_version": {"$eq": True}},
+            ]
+        },
+    )
+
+    assert [passage.chunk_id for passage in passages] == ["current"]

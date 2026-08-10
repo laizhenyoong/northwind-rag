@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -12,7 +13,13 @@ from rag.retrieval.semantic import RetrievedPassage, build_context
 
 
 class Retriever(Protocol):
-    def retrieve(self, question: str, *, top_k: int) -> list[RetrievedPassage]: ...
+    def retrieve(
+        self,
+        question: str,
+        *,
+        top_k: int,
+        metadata_filter: Mapping[str, object] | None = None,
+    ) -> list[RetrievedPassage]: ...
 
 
 class Answerer(Protocol):
@@ -35,6 +42,7 @@ def answer_question(
     answerer: Answerer,
     top_k: int,
     pipeline_config: dict[str, Any],
+    metadata_filter: Mapping[str, object] | None = None,
 ) -> AnswerRun:
     """Retrieve, answer, and capture failures without losing the evidence."""
     if top_k < 1:
@@ -45,7 +53,10 @@ def answer_question(
     generated_answer: GroundedAnswer | None = None
     error: str | None = None
     try:
-        passages = retriever.retrieve(question, top_k=top_k)
+        retrieve_arguments: dict[str, object] = {"top_k": top_k}
+        if metadata_filter is not None:
+            retrieve_arguments["metadata_filter"] = metadata_filter
+        passages = retriever.retrieve(question, **retrieve_arguments)
         generated_answer = answerer.answer(question, passages)
     except Exception as exception:  # Preserve a debuggable record for evaluation.
         error = f"{type(exception).__name__}: {exception}"
@@ -57,7 +68,7 @@ def answer_question(
     trace = RunTrace(
         question_id=question_id,
         question=question,
-        pipeline_config={**pipeline_config, "top_k": top_k},
+        pipeline_config={**pipeline_config, "top_k": top_k, "metadata_filter": metadata_filter},
         retrieved_chunks=retrieved_chunks,
         context_sent_to_model=context or None,
         answer=generated_answer.text if generated_answer else None,

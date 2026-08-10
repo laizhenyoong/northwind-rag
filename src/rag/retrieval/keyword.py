@@ -6,6 +6,7 @@ import argparse
 import math
 import re
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,8 +55,14 @@ class KeywordRetriever:
         """Create an in-memory keyword index from the same chunks as Pinecone."""
         return cls(tuple(chunk_corpus(load_corpus(corpus_root), chunk_size=chunk_size)))
 
-    def retrieve(self, question: str, *, top_k: int = 5) -> list[RetrievedPassage]:
-        """Return the highest-scoring chunks that share at least one query token."""
+    def retrieve(
+        self,
+        question: str,
+        *,
+        top_k: int = 5,
+        metadata_filter: Mapping[str, object] | None = None,
+    ) -> list[RetrievedPassage]:
+        """Return matching chunks, optionally constrained by the same metadata policy."""
         if not question.strip():
             raise ValueError("question must not be empty")
         if top_k < 1:
@@ -67,7 +74,7 @@ class KeywordRetriever:
             (
                 (score, chunk)
                 for score, chunk in zip(scores, self.chunks, strict=True)
-                if score > 0
+                if score > 0 and _matches_metadata_filter(chunk.metadata, metadata_filter)
             ),
             key=lambda item: (-item[0], item[1].id),
         )
@@ -101,6 +108,46 @@ class KeywordRetriever:
             )
             score += idf * frequency * (self.k1 + 1) / (frequency + length_normalizer)
         return score
+
+
+def _matches_metadata_filter(
+    metadata: Mapping[str, object], metadata_filter: Mapping[str, object] | None
+) -> bool:
+    """Evaluate the Pinecone filter operators used by our local BM25 index."""
+    if metadata_filter is None:
+        return True
+
+    for field, condition in metadata_filter.items():
+        if field == "$and":
+            if not isinstance(condition, list) or not all(
+                isinstance(item, Mapping) and _matches_metadata_filter(metadata, item)
+                for item in condition
+            ):
+                return False
+            continue
+        if field == "$or":
+            if not isinstance(condition, list) or not any(
+                isinstance(item, Mapping) and _matches_metadata_filter(metadata, item)
+                for item in condition
+            ):
+                return False
+            continue
+        if not isinstance(condition, Mapping):
+            raise ValueError(f"Invalid metadata filter condition for {field}")
+
+        actual = metadata.get(field)
+        for operator, expected in condition.items():
+            if operator == "$eq":
+                matched = actual == expected
+            elif operator == "$lte":
+                matched = actual is not None and actual <= expected
+            elif operator == "$gte":
+                matched = actual is not None and actual >= expected
+            else:
+                raise ValueError(f"Unsupported local metadata filter operator: {operator}")
+            if not matched:
+                return False
+    return True
 
 
 def main() -> None:

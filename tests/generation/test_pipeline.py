@@ -4,7 +4,11 @@ from rag.retrieval.semantic import RetrievedPassage
 
 
 class FakeRetriever:
-    def retrieve(self, question: str, *, top_k: int) -> list[RetrievedPassage]:
+    def __init__(self) -> None:
+        self.filters = []
+
+    def retrieve(self, question: str, *, top_k: int, metadata_filter=None) -> list[RetrievedPassage]:
+        self.filters.append(metadata_filter)
         return [
             RetrievedPassage(
                 chunk_id="policy.md:0000",
@@ -25,10 +29,11 @@ class FakeAnswerer:
 
 
 def test_answer_pipeline_stores_the_retrieval_context_and_answer() -> None:
+    retriever = FakeRetriever()
     run = answer_question(
         question_id="Q001",
         question="What is the domestic rate?",
-        retriever=FakeRetriever(),
+        retriever=retriever,
         answerer=FakeAnswerer(),
         top_k=5,
         pipeline_config={"generation_model": "gemma4"},
@@ -39,3 +44,22 @@ def test_answer_pipeline_stores_the_retrieval_context_and_answer() -> None:
     assert run.trace.context_sent_to_model == "[S1] policy context"
     assert run.trace.retrieved_chunks[0].chunk_id == "policy.md:0000"
     assert run.trace.error is None
+    assert retriever.filters == [None]
+
+
+def test_answer_pipeline_passes_an_explicit_metadata_filter_to_retrieval() -> None:
+    retriever = FakeRetriever()
+    metadata_filter = {"is_current_version": {"$eq": True}}
+
+    run = answer_question(
+        question_id="Q001",
+        question="What is the domestic rate?",
+        retriever=retriever,
+        answerer=FakeAnswerer(),
+        top_k=5,
+        pipeline_config={},
+        metadata_filter=metadata_filter,
+    )
+
+    assert retriever.filters == [metadata_filter]
+    assert run.trace.pipeline_config["metadata_filter"] == metadata_filter

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Protocol
 
 from rag.retrieval.semantic import RetrievedPassage
@@ -11,7 +12,13 @@ from rag.retrieval.semantic import RetrievedPassage
 class CandidateRetriever(Protocol):
     """Retrieve a wider candidate set for the second-stage reranker."""
 
-    def retrieve(self, question: str, *, top_k: int) -> list[RetrievedPassage]: ...
+    def retrieve(
+        self,
+        question: str,
+        *,
+        top_k: int,
+        metadata_filter: Mapping[str, object] | None = None,
+    ) -> list[RetrievedPassage]: ...
 
 
 class Reranker(Protocol):
@@ -34,12 +41,20 @@ class RerankingRetriever:
         if self.candidate_k < 1:
             raise ValueError("candidate_k must be at least 1")
 
-    def retrieve(self, question: str, *, top_k: int = 5) -> list[RetrievedPassage]:
+    def retrieve(
+        self,
+        question: str,
+        *,
+        top_k: int = 5,
+        metadata_filter: Mapping[str, object] | None = None,
+    ) -> list[RetrievedPassage]:
         """Use the reranker only on the candidate set, never the whole corpus."""
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
         if top_k > self.candidate_k:
             raise ValueError("top_k cannot be greater than candidate_k")
 
-        candidates = self.candidate_retriever.retrieve(question, top_k=self.candidate_k)
+        candidates = self.candidate_retriever.retrieve(
+            question, top_k=self.candidate_k, metadata_filter=metadata_filter
+        )
         return self.reranker.rerank(question, candidates, top_k=top_k)

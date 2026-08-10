@@ -13,6 +13,12 @@ from rag.retrieval.hybrid import HybridRetriever
 from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import SemanticRetriever
+from rag.retrieval.version_filters import (
+    as_of_date_filter,
+    current_version_filter,
+    exact_version_filter,
+    parse_as_of_date,
+)
 from rag.reranking import BGEReranker
 from rag.vector_store import PineconeSettings, ensure_index
 
@@ -27,10 +33,31 @@ def main() -> None:
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rerank", action="store_true")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
+    parser.add_argument("--document-id")
+    version_selection = parser.add_mutually_exclusive_group()
+    version_selection.add_argument("--current", action="store_true")
+    version_selection.add_argument("--version")
+    version_selection.add_argument("--as-of")
     parser.add_argument("--corpus-root", type=Path, default=Path("data"))
     parser.add_argument("--chunk-size", type=int, default=500)
     parser.add_argument("--trace", type=Path, default=Path("results/answer.jsonl"))
     arguments = parser.parse_args()
+
+    if (arguments.current or arguments.version or arguments.as_of) and not arguments.document_id:
+        parser.error("--document-id is required with --current, --version, or --as-of")
+
+    metadata_filter = None
+    if arguments.current:
+        metadata_filter = current_version_filter(arguments.document_id)
+    elif arguments.version:
+        metadata_filter = exact_version_filter(arguments.document_id, arguments.version)
+    elif arguments.as_of:
+        try:
+            metadata_filter = as_of_date_filter(
+                arguments.document_id, parse_as_of_date(arguments.as_of)
+            )
+        except ValueError as error:
+            parser.error(str(error))
 
     embedder = OllamaEmbedder()
     hybrid_retriever = HybridRetriever(
@@ -58,6 +85,7 @@ def main() -> None:
         retriever=retriever,
         answerer=GroundedAnswerer(OllamaChatModel(model=arguments.model)),
         top_k=arguments.top_k,
+        metadata_filter=metadata_filter,
         pipeline_config={
             "retrieval_strategy": "semantic-bm25-rrf",
             "embedding_model": embedder.model,
