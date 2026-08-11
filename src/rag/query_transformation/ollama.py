@@ -10,7 +10,10 @@ from typing import Protocol
 SYSTEM_PROMPT = """You rewrite a complex question into focused document-search queries.
 Return at most three sub-queries, one per line, with no explanation. Preserve
 exact names, product IDs, dates, and numbers. Each sub-query should seek one
-fact needed to answer the original question. Do not answer the question."""
+fact needed to answer the original question. For a comparison question, write
+a comparison-focused query that names both sides of the comparison (for
+example, "previous lead time compared with new supplier lead time"). Do not
+invent missing values and do not answer the question."""
 _LIST_PREFIX = re.compile(r"^(?:[-*]|\d+[.)])\s*")
 
 

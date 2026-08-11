@@ -44,3 +44,17 @@ def test_decomposition_fuses_original_and_subquery_rankings() -> None:
         ("supplier", 2, metadata_filter),
         ("lead time", 2, metadata_filter),
     ]
+
+
+def test_decomposition_can_reserve_evidence_for_each_subquery() -> None:
+    candidate_retriever = FakeRetriever()
+    retriever = QueryDecompositionRetriever(
+        candidate_retriever,
+        FakeDecomposer(),
+        candidate_k=2,
+        coverage_per_query=1,
+    )
+
+    passages = retriever.retrieve("original", top_k=2)
+
+    assert [passage.chunk_id for passage in passages] == ["supplier-doc", "lead-time-doc"]

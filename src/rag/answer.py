@@ -34,6 +34,7 @@ def main() -> None:
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rerank", action="store_true")
     parser.add_argument("--decompose", action="store_true")
+    parser.add_argument("--coverage-per-query", type=int, default=0)
     parser.add_argument("--query-model", default="gemma4")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--document-id")
@@ -78,6 +79,7 @@ def main() -> None:
             candidate_retriever=hybrid_retriever,
             decomposer=OllamaQueryDecomposer(OllamaChatModel(model=arguments.query_model)),
             candidate_k=arguments.candidate_k,
+            coverage_per_query=arguments.coverage_per_query,
         )
         if arguments.decompose
         else hybrid_retriever
@@ -107,6 +109,7 @@ def main() -> None:
             "rrf_k": 60,
             "reranker_model": arguments.reranker_model if arguments.rerank else None,
             "query_model": arguments.query_model if arguments.decompose else None,
+            "coverage_per_query": arguments.coverage_per_query if arguments.decompose else None,
         },
     )
     write_traces(arguments.trace, [run.trace])

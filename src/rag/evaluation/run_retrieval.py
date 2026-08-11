@@ -168,6 +168,7 @@ def main() -> None:
     parser.add_argument("--namespace", default="")
     parser.add_argument("--min-chunk-size", type=int, default=200)
     parser.add_argument("--similarity-threshold", type=float, default=0.75)
+    parser.add_argument("--coverage-per-query", type=int, default=0)
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--query-model", default="gemma4")
     arguments = parser.parse_args()
@@ -216,11 +217,13 @@ def main() -> None:
                 hybrid_retriever = QueryDecompositionRetriever(
                     candidate_retriever=hybrid_retriever,
                     decomposer=OllamaQueryDecomposer(OllamaChatModel(model=arguments.query_model)),
+                    coverage_per_query=arguments.coverage_per_query,
                 )
                 pipeline_config.update(
                     {
                         "retrieval_strategy": "semantic-bm25-rrf-query-decomposition",
                         "query_model": arguments.query_model,
+                        "coverage_per_query": arguments.coverage_per_query,
                     }
                 )
             if arguments.strategy in {"hybrid-reranked", "hybrid-decomposed-reranked"}:
