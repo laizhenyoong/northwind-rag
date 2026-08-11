@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from rag.chunking import Chunk, chunk_document
 from rag.embeddings import OllamaEmbedder
@@ -61,6 +61,7 @@ def build_sync_plan(
     *,
     index_config: dict[str, object],
     chunk_size: int,
+    chunker: Callable[[Document], list[Chunk]] | None = None,
 ) -> SyncPlan:
     """Classify every source as new, content-changed, metadata-changed, or unchanged."""
     previous_entries = previous_manifest.documents if previous_manifest else {}
@@ -69,6 +70,9 @@ def build_sync_plan(
     )
     actions: list[SyncAction] = []
     entries: dict[str, ManifestEntry] = {}
+    chunk_document_for_strategy = chunker or (
+        lambda document: chunk_document(document, chunk_size=chunk_size)
+    )
 
     for document in documents:
         source_path = _source_path(document)
@@ -87,7 +91,7 @@ def build_sync_plan(
 
         chunk_ids = (
             previous.chunk_ids if kind == "unchanged" else tuple(
-                chunk.id for chunk in chunk_document(document, chunk_size=chunk_size)
+                chunk.id for chunk in chunk_document_for_strategy(document)
             )
         )
         entries[source_path] = ManifestEntry(
@@ -118,6 +122,7 @@ def synchronize_corpus(
     batch_size: int = 32,
     namespace: str = "",
     dry_run: bool = False,
+    chunker: Callable[[Document], list[Chunk]] | None = None,
 ) -> SyncPlan:
     """Apply the minimum safe Pinecone changes, then persist the new manifest."""
     if batch_size < 1:
@@ -130,6 +135,7 @@ def synchronize_corpus(
         previous_manifest,
         index_config=index_config,
         chunk_size=chunk_size,
+        chunker=chunker,
     )
     if dry_run:
         return plan
@@ -139,7 +145,7 @@ def synchronize_corpus(
         document = documents_by_path.get(action.source_path)
         if action.kind in {"new", "content"}:
             assert document is not None
-            chunks = chunk_document(document, chunk_size=chunk_size)
+            chunks = (chunker or (lambda item: chunk_document(item, chunk_size=chunk_size)))(document)
             _embed_and_upsert(chunks, embedder, vector_index, batch_size, namespace)
             old_chunk_ids = set(previous_entries.get(action.source_path, ManifestEntry(
                 action.source_path, None, None, "", "", (), ""
@@ -148,7 +154,7 @@ def synchronize_corpus(
             _delete_ids(stale_chunk_ids, vector_index, namespace)
         elif action.kind == "metadata":
             assert document is not None
-            chunks = chunk_document(document, chunk_size=chunk_size)
+            chunks = (chunker or (lambda item: chunk_document(item, chunk_size=chunk_size)))(document)
             _replace_metadata_without_embedding(chunks, vector_index, namespace)
         elif action.kind == "deleted":
             _delete_ids(previous_entries[action.source_path].chunk_ids, vector_index, namespace)

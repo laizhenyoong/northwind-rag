@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from rag.chunking.semantic import chunk_semantic_corpus
 from rag.embeddings import OllamaEmbedder
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.retrieval_metrics import RetrievalMetrics, score_retrieval
@@ -21,6 +22,7 @@ from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever
 from rag.reranking import BGEReranker
 from rag.query_transformation import OllamaQueryDecomposer, QueryDecompositionRetriever
 from rag.generation.ollama import OllamaChatModel
+from rag.ingestion import load_corpus
 from rag.vector_store import PineconeSettings, ensure_index
 
 
@@ -160,6 +162,12 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--chunk-size", type=int, default=500)
+    parser.add_argument(
+        "--chunking-strategy", choices=("markdown-aware", "semantic"), default="markdown-aware"
+    )
+    parser.add_argument("--namespace", default="")
+    parser.add_argument("--min-chunk-size", type=int, default=200)
+    parser.add_argument("--similarity-threshold", type=float, default=0.75)
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--query-model", default="gemma4")
     arguments = parser.parse_args()
@@ -177,6 +185,7 @@ def main() -> None:
         semantic_retriever: Retriever = SemanticRetriever(
             embedder=embedder,
             vector_index=ensure_index(PineconeSettings.from_environment()),
+            namespace=arguments.namespace,
         )
         if arguments.strategy == "semantic":
             retriever = semantic_retriever
@@ -184,19 +193,21 @@ def main() -> None:
                 "retrieval_strategy": "pinecone-semantic",
                 "embedding_model": embedder.model,
                 "chunk_size": arguments.chunk_size,
+                "chunking_strategy": arguments.chunking_strategy,
+                "namespace": arguments.namespace,
                 "metadata_filter": None,
             }
         else:
             hybrid_retriever = HybridRetriever(
                 semantic_retriever=semantic_retriever,
-                keyword_retriever=KeywordRetriever.from_corpus(
-                    Path("data"), chunk_size=arguments.chunk_size
-                ),
+                keyword_retriever=_keyword_retriever(arguments, embedder),
             )
             pipeline_config: dict[str, Any] = {
                 "retrieval_strategy": "semantic-bm25-rrf",
                 "embedding_model": embedder.model,
                 "chunk_size": arguments.chunk_size,
+                "chunking_strategy": arguments.chunking_strategy,
+                "namespace": arguments.namespace,
                 "candidate_k": 20,
                 "rrf_k": 60,
                 "metadata_filter": None,
@@ -226,12 +237,11 @@ def main() -> None:
             else:
                 retriever = hybrid_retriever
     else:
-        retriever: Retriever = KeywordRetriever.from_corpus(
-            Path("data"), chunk_size=arguments.chunk_size
-        )
+        retriever = _keyword_retriever(arguments, OllamaEmbedder())
         pipeline_config = {
             "retrieval_strategy": "bm25-keyword",
             "chunk_size": arguments.chunk_size,
+            "chunking_strategy": arguments.chunking_strategy,
         }
 
     evaluation = evaluate_retrieval(
@@ -250,6 +260,20 @@ def main() -> None:
         f"nDCG@{arguments.top_k}={summary.mean_ndcg_at_k:.3f} "
         f"errors={summary.error_count}"
     )
+
+
+def _keyword_retriever(arguments: argparse.Namespace, embedder: OllamaEmbedder) -> KeywordRetriever:
+    """Build BM25 from precisely the same chunking strategy as Pinecone."""
+    if arguments.chunking_strategy == "markdown-aware":
+        return KeywordRetriever.from_corpus(Path("data"), chunk_size=arguments.chunk_size)
+    chunks = chunk_semantic_corpus(
+        load_corpus(Path("data")),
+        embedder=embedder,
+        chunk_size=arguments.chunk_size,
+        min_chunk_size=arguments.min_chunk_size,
+        similarity_threshold=arguments.similarity_threshold,
+    )
+    return KeywordRetriever(tuple(chunks))
 
 
 if __name__ == "__main__":

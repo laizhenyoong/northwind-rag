@@ -58,6 +58,7 @@ class SemanticRetriever:
 
     embedder: Embedder
     vector_index: VectorIndex
+    namespace: str = ""
 
     def retrieve(
         self,
@@ -81,6 +82,8 @@ class SemanticRetriever:
             "top_k": top_k,
             "include_metadata": True,
         }
+        if self.namespace:
+            query_arguments["namespace"] = self.namespace
         if metadata_filter is not None:
             query_arguments["filter"] = dict(metadata_filter)
 
