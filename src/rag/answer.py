@@ -20,7 +20,12 @@ from rag.retrieval.version_filters import (
     parse_as_of_date,
 )
 from rag.reranking import BGEReranker
-from rag.query_transformation import OllamaQueryDecomposer, QueryDecompositionRetriever
+from rag.query_transformation import (
+    MultiHopRetriever,
+    OllamaFollowupQueryGenerator,
+    OllamaQueryDecomposer,
+    QueryDecompositionRetriever,
+)
 from rag.vector_store import PineconeSettings, ensure_index
 
 
@@ -34,6 +39,7 @@ def main() -> None:
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rerank", action="store_true")
     parser.add_argument("--decompose", action="store_true")
+    parser.add_argument("--multi-hop", action="store_true")
     parser.add_argument("--coverage-per-query", type=int, default=0)
     parser.add_argument("--query-model", default="gemma4")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
@@ -84,6 +90,15 @@ def main() -> None:
         if arguments.decompose
         else hybrid_retriever
     )
+    candidate_retriever = (
+        MultiHopRetriever(
+            candidate_retriever=candidate_retriever,
+            followup_generator=OllamaFollowupQueryGenerator(OllamaChatModel(model=arguments.query_model)),
+            candidate_k=arguments.candidate_k,
+        )
+        if arguments.multi_hop
+        else candidate_retriever
+    )
     retriever = (
         RerankingRetriever(
             candidate_retriever=candidate_retriever,
@@ -110,6 +125,7 @@ def main() -> None:
             "reranker_model": arguments.reranker_model if arguments.rerank else None,
             "query_model": arguments.query_model if arguments.decompose else None,
             "coverage_per_query": arguments.coverage_per_query if arguments.decompose else None,
+            "multi_hop": arguments.multi_hop,
         },
     )
     write_traces(arguments.trace, [run.trace])

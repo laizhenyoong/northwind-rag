@@ -14,6 +14,13 @@ fact needed to answer the original question. For a comparison question, write
 a comparison-focused query that names both sides of the comparison (for
 example, "previous lead time compared with new supplier lead time"). Do not
 invent missing values and do not answer the question."""
+FOLLOWUP_SYSTEM_PROMPT = """You create one follow-up document-search query.
+Use only names, IDs, and facts visible in the retrieved evidence. The original
+question needs another fact that the first search may not contain. Write a
+targeted query that combines a discovered name or ID with that unresolved fact.
+For example, if the evidence identifies a new supplier and the question asks
+about a comparison, search for that supplier's previous versus new value. Do
+not answer the question. Return one query only, with no explanation."""
 _LIST_PREFIX = re.compile(r"^(?:[-*]|\d+[.)])\s*")
 
 
@@ -45,6 +52,24 @@ class OllamaQueryDecomposer:
         return parse_subqueries(response, original_question=question, limit=self.max_subqueries)
 
 
+@dataclass(slots=True)
+class OllamaFollowupQueryGenerator:
+    """Derive one second-pass query from the first pass's retrieved evidence."""
+
+    chat_model: ChatModel
+
+    def generate(self, question: str, passages: list[object]) -> str | None:
+        evidence = "\n\n".join(
+            f"[Evidence {index}]\n{getattr(passage, 'text', '')}"
+            for index, passage in enumerate(passages, start=1)
+        )
+        response = self.chat_model.complete(
+            system_prompt=FOLLOWUP_SYSTEM_PROMPT,
+            user_prompt=f"Original question:\n{question}\n\nRetrieved evidence:\n{evidence}\n\nFollow-up query:",
+        )
+        return parse_followup_query(response, original_question=question)
+
+
 def parse_subqueries(response: str, *, original_question: str, limit: int) -> list[str]:
     """Normalize a line-oriented model response into safe retrieval inputs."""
     original_normalized = original_question.strip().casefold()
@@ -62,3 +87,9 @@ def parse_subqueries(response: str, *, original_question: str, limit: int) -> li
         if len(subqueries) == limit:
             break
     return subqueries
+
+
+def parse_followup_query(response: str, *, original_question: str) -> str | None:
+    """Keep one safe single-line follow-up query from the local model."""
+    queries = parse_subqueries(response, original_question=original_question, limit=1)
+    return queries[0] if queries else None
