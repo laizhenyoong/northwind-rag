@@ -24,7 +24,7 @@ from rag.ingestion.manifest import (
 from rag.vector_store import PineconeSettings, ensure_index
 
 
-MANIFEST_SCHEMA_VERSION = 1
+MANIFEST_SCHEMA_VERSION = 2
 
 
 class Embedder(Protocol):
@@ -273,7 +273,11 @@ def main() -> None:
         manifest_path=arguments.manifest,
         embedder=embedder,
         vector_index=vector_index,
-        index_config={"embedding_model": embedder.model, "chunk_size": arguments.chunk_size},
+        index_config={
+            "embedding_model": embedder.model,
+            "chunk_size": arguments.chunk_size,
+            "chunking_strategy": "markdown-aware-v1",
+        },
         chunk_size=arguments.chunk_size,
         batch_size=arguments.batch_size,
         dry_run=arguments.dry_run,

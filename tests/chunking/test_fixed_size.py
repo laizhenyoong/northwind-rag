@@ -1,4 +1,4 @@
-from rag.chunking import chunk_document
+from rag.chunking.fixed_size import chunk_document
 from rag.ingestion import Document
 
 
