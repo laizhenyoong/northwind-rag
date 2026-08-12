@@ -20,7 +20,12 @@ from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever
 from rag.reranking import BGEReranker
-from rag.query_transformation import OllamaQueryDecomposer, QueryDecompositionRetriever
+from rag.query_transformation import (
+    MultiHopRetriever,
+    OllamaFollowupQueryGenerator,
+    OllamaQueryDecomposer,
+    QueryDecompositionRetriever,
+)
 from rag.generation.ollama import OllamaChatModel
 from rag.ingestion import load_corpus
 from rag.vector_store import PineconeSettings, ensure_index
@@ -61,6 +66,7 @@ def default_output_path(strategy: str) -> Path:
         "hybrid": Path("results/retrieval-hybrid.jsonl"),
         "hybrid-reranked": Path("results/retrieval-hybrid-reranked.jsonl"),
         "hybrid-decomposed": Path("results/retrieval-hybrid-decomposed.jsonl"),
+        "hybrid-decomposed-multihop": Path("results/retrieval-hybrid-decomposed-multihop.jsonl"),
         "hybrid-decomposed-reranked": Path("results/retrieval-hybrid-decomposed-reranked.jsonl"),
     }
     try:
@@ -155,6 +161,7 @@ def main() -> None:
             "hybrid",
             "hybrid-reranked",
             "hybrid-decomposed",
+            "hybrid-decomposed-multihop",
             "hybrid-decomposed-reranked",
         ),
         default="semantic",
@@ -180,6 +187,7 @@ def main() -> None:
         "hybrid",
         "hybrid-reranked",
         "hybrid-decomposed",
+        "hybrid-decomposed-multihop",
         "hybrid-decomposed-reranked",
     }:
         embedder = OllamaEmbedder()
@@ -213,7 +221,11 @@ def main() -> None:
                 "rrf_k": 60,
                 "metadata_filter": None,
             }
-            if arguments.strategy in {"hybrid-decomposed", "hybrid-decomposed-reranked"}:
+            if arguments.strategy in {
+                "hybrid-decomposed",
+                "hybrid-decomposed-multihop",
+                "hybrid-decomposed-reranked",
+            }:
                 hybrid_retriever = QueryDecompositionRetriever(
                     candidate_retriever=hybrid_retriever,
                     decomposer=OllamaQueryDecomposer(OllamaChatModel(model=arguments.query_model)),
@@ -224,6 +236,19 @@ def main() -> None:
                         "retrieval_strategy": "semantic-bm25-rrf-query-decomposition",
                         "query_model": arguments.query_model,
                         "coverage_per_query": arguments.coverage_per_query,
+                    }
+                )
+            if arguments.strategy == "hybrid-decomposed-multihop":
+                hybrid_retriever = MultiHopRetriever(
+                    candidate_retriever=hybrid_retriever,
+                    followup_generator=OllamaFollowupQueryGenerator(
+                        OllamaChatModel(model=arguments.query_model)
+                    ),
+                )
+                pipeline_config.update(
+                    {
+                        "retrieval_strategy": "semantic-bm25-rrf-query-decomposition-multihop",
+                        "multi_hop": True,
                     }
                 )
             if arguments.strategy in {"hybrid-reranked", "hybrid-decomposed-reranked"}:

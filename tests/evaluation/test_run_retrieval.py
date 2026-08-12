@@ -68,3 +68,6 @@ def test_default_output_path_keeps_retrieval_experiments_separate() -> None:
     assert default_output_path("semantic") == Path("results/retrieval-baseline.jsonl")
     assert default_output_path("keyword") == Path("results/retrieval-keyword.jsonl")
     assert default_output_path("hybrid") == Path("results/retrieval-hybrid.jsonl")
+    assert default_output_path("hybrid-decomposed-multihop") == Path(
+        "results/retrieval-hybrid-decomposed-multihop.jsonl"
+    )
