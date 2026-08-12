@@ -10,6 +10,12 @@ from typing import Any
 
 from rag.embeddings import OllamaEmbedder
 from rag.evaluation.answer_metrics import AnswerEvaluation, evaluate_answers
+from rag.evaluation.answer_judge import (
+    AnswerJudgementEvaluation,
+    SemanticAnswerJudge,
+    evaluate_semantic_answers,
+    write_judgements,
+)
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.traces import RunTrace, write_traces
 from rag.generation import GroundedAnswerer, OllamaChatModel
@@ -29,6 +35,7 @@ class AnswerRunEvaluation:
 
     traces: tuple[RunTrace, ...]
     evaluation: AnswerEvaluation
+    semantic_evaluation: AnswerJudgementEvaluation | None = None
 
 
 def run_answer_evaluation(
@@ -38,6 +45,7 @@ def run_answer_evaluation(
     answerer: Answerer,
     top_k: int,
     pipeline_config: dict[str, Any],
+    semantic_judge: SemanticAnswerJudge | None = None,
 ) -> AnswerRunEvaluation:
     """Answer every gold question and evaluate the persisted evidence."""
     traces = tuple(
@@ -51,7 +59,15 @@ def run_answer_evaluation(
         ).trace
         for question in questions
     )
-    return AnswerRunEvaluation(traces=traces, evaluation=evaluate_answers(questions, traces))
+    return AnswerRunEvaluation(
+        traces=traces,
+        evaluation=evaluate_answers(questions, traces),
+        semantic_evaluation=(
+            evaluate_semantic_answers(questions, traces, judge=semantic_judge)
+            if semantic_judge is not None
+            else None
+        ),
+    )
 
 
 def main() -> None:
@@ -59,6 +75,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate grounded RAG answers")
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
     parser.add_argument("--output", type=Path, default=Path("results/answer-evaluation.jsonl"))
+    parser.add_argument(
+        "--judgements-output", type=Path, default=Path("results/answer-judgements.jsonl")
+    )
     parser.add_argument("--model", default="gemma4")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--candidate-k", type=int, default=20)
@@ -68,6 +87,8 @@ def main() -> None:
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--chunk-size", type=int, default=500)
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--judge-model", default="gemma4")
+    parser.add_argument("--skip-semantic-judge", action="store_true")
     arguments = parser.parse_args()
 
     questions = load_gold_questions(arguments.questions)
@@ -119,7 +140,13 @@ def main() -> None:
             "rrf_k": 60,
             "reranker_model": arguments.reranker_model if arguments.rerank else None,
             "query_model": arguments.query_model if arguments.decompose else None,
+            "judge_model": None if arguments.skip_semantic_judge else arguments.judge_model,
         },
+        semantic_judge=(
+            None
+            if arguments.skip_semantic_judge
+            else SemanticAnswerJudge(OllamaChatModel(model=arguments.judge_model))
+        ),
     )
     write_traces(arguments.output, list(evaluation.traces))
     summary = evaluation.evaluation.summary
@@ -131,6 +158,17 @@ def main() -> None:
         f"refusal_rate={summary.refusal_rate:.3f} "
         f"errors={summary.error_count}"
     )
+    if evaluation.semantic_evaluation is not None:
+        write_judgements(arguments.judgements_output, evaluation.semantic_evaluation.judgements)
+        semantic = evaluation.semantic_evaluation.summary
+        print(
+            f"Wrote {semantic.question_count} semantic judgements to {arguments.judgements_output}. "
+            f"correctness_rate={semantic.correctness_rate:.3f} "
+            f"citation_supported_rate={semantic.citation_supported_rate:.3f} "
+            f"correct_version_rate={semantic.correct_version_rate:.3f} "
+            f"proper_refusal_rate={semantic.proper_refusal_rate:.3f} "
+            f"errors={semantic.error_count}"
+        )
 
 
 if __name__ == "__main__":

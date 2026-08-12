@@ -1,0 +1,97 @@
+from rag.evaluation import (
+    GoldQuestion,
+    RetrievedChunk,
+    RunTrace,
+    SemanticAnswerJudge,
+    evaluate_semantic_answers,
+)
+
+
+class FakeChatModel:
+    def __init__(self, response: str) -> None:
+        self.response = response
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        return self.response
+
+
+def question(*, answerable: bool = True) -> GoldQuestion:
+    return GoldQuestion(
+        id="Q001" if answerable else "Q079",
+        question="What is the current rate?",
+        expected_answer="RM 180 under policy v2.1.",
+        source_files=("data/policies/current.md",),
+        concept="version-conflict",
+        difficulty="medium",
+        answerable=answerable,
+    )
+
+
+def trace(*, question_id: str = "Q001", answer: str = "RM 180. [S1]") -> RunTrace:
+    return RunTrace(
+        question_id=question_id,
+        question="What is the current rate?",
+        pipeline_config={},
+        retrieved_chunks=(RetrievedChunk("current.md:0000", "data/policies/current.md", 1, 0.9),),
+        context_sent_to_model="[S1] RM 180 under policy v2.1.",
+        answer=answer,
+    )
+
+
+def test_semantic_judge_parses_a_structured_verdict() -> None:
+    judge = SemanticAnswerJudge(
+        FakeChatModel(
+            '{"correct": true, "citation_supported": true, '
+            '"used_correct_version": true, "proper_refusal": false, "reason": "Matches v2.1."}'
+        )
+    )
+
+    judgement = judge.judge(question(), trace())
+
+    assert judgement.correct is True
+    assert judgement.citation_supported is True
+    assert judgement.used_correct_version is True
+    assert judgement.proper_refusal is False
+    assert judgement.error is None
+
+
+def test_semantic_evaluation_separates_answer_quality_and_refusal_quality() -> None:
+    judge = SemanticAnswerJudge(
+        FakeChatModel(
+            '{"correct": true, "citation_supported": true, '
+            '"used_correct_version": true, "proper_refusal": true, "reason": "Valid refusal."}'
+        )
+    )
+
+    evaluation = evaluate_semantic_answers(
+        [question(), question(answerable=False)],
+        [trace(), trace(question_id="Q079", answer="I don't know based on the provided context.")],
+        judge=judge,
+    )
+
+    assert evaluation.summary.correctness_rate == 1.0
+    assert evaluation.summary.citation_supported_rate == 1.0
+    assert evaluation.summary.correct_version_rate == 1.0
+    assert evaluation.summary.proper_refusal_rate == 1.0
+
+
+def test_semantic_judge_keeps_a_bad_model_response_as_an_inspectable_error() -> None:
+    judgement = SemanticAnswerJudge(FakeChatModel("Not JSON")).judge(question(), trace())
+
+    assert judgement.correct is False
+    assert judgement.error == "Judge did not return a JSON object"
+
+
+def test_judge_prompt_rejects_conflicting_historical_values() -> None:
+    model = FakeChatModel(
+        '{"correct": false, "citation_supported": true, '
+        '"used_correct_version": false, "proper_refusal": false, '
+        '"reason": "It also gives the superseded RM 150 rate."}'
+    )
+
+    judgement = SemanticAnswerJudge(model).judge(
+        question(), trace(answer="The current rate is RM 180, but RM 150 also applies. [S1]")
+    )
+
+    assert judgement.correct is False
+    assert judgement.used_correct_version is False
