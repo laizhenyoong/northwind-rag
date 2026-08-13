@@ -34,6 +34,16 @@ def test_grounded_answer_keeps_only_citations_to_retrieved_chunks() -> None:
     assert "data/policy.md" in model.calls[0][1]
 
 
+def test_grounded_answerer_prompt_instructs_version_aware_answers() -> None:
+    model = FakeChatModel("The rate is RM 180. [S1]")
+
+    GroundedAnswerer(model).answer("What is the current rate?", [passage()])
+
+    system_prompt, _ = model.calls[0]
+    assert "multiple document versions" in system_prompt
+    assert "superseded values unless" in system_prompt
+
+
 def test_grounded_answer_rejects_missing_or_unknown_citations() -> None:
     with pytest.raises(GroundingError, match="no context citations"):
         GroundedAnswerer(FakeChatModel("The rate is RM 180.")).answer("What is the rate?", [passage()])
