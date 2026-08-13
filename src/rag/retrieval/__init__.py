@@ -4,6 +4,7 @@ from typing import Any
 
 __all__ = [
     "HybridRetriever",
+    "NeighborExpandingRetriever",
     "QueryDecompositionRetriever",
     "RerankingRetriever",
     "RetrievedPassage",
@@ -16,12 +17,14 @@ def __getattr__(name: str) -> Any:
     """Avoid importing the executable module before ``python -m`` runs it."""
     if name in __all__:
         from rag.retrieval.hybrid import HybridRetriever
+        from rag.retrieval.neighbors import NeighborExpandingRetriever
         from rag.retrieval.reranked import RerankingRetriever
         from rag.query_transformation import QueryDecompositionRetriever
         from rag.retrieval.semantic import RetrievedPassage, SemanticRetriever, build_context
 
         return {
             "HybridRetriever": HybridRetriever,
+            "NeighborExpandingRetriever": NeighborExpandingRetriever,
             "QueryDecompositionRetriever": QueryDecompositionRetriever,
             "RerankingRetriever": RerankingRetriever,
             "RetrievedPassage": RetrievedPassage,

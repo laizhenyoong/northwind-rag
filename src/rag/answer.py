@@ -11,6 +11,7 @@ from rag.generation import GroundedAnswerer, OllamaChatModel
 from rag.generation.pipeline import answer_question
 from rag.retrieval.hybrid import HybridRetriever
 from rag.retrieval.keyword import KeywordRetriever
+from rag.retrieval.neighbors import NeighborExpandingRetriever
 from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import SemanticRetriever
 from rag.retrieval.version_filters import (
@@ -41,6 +42,7 @@ def main() -> None:
     parser.add_argument("--decompose", action="store_true")
     parser.add_argument("--multi-hop", action="store_true")
     parser.add_argument("--coverage-per-query", type=int, default=0)
+    parser.add_argument("--neighbor-window", type=int, default=0)
     parser.add_argument("--query-model", default="gemma4")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--document-id")
@@ -108,6 +110,16 @@ def main() -> None:
         if arguments.rerank
         else candidate_retriever
     )
+    retriever = (
+        NeighborExpandingRetriever.from_corpus(
+            retriever,
+            arguments.corpus_root,
+            chunk_size=arguments.chunk_size,
+            neighbor_window=arguments.neighbor_window,
+        )
+        if arguments.neighbor_window
+        else retriever
+    )
     run = answer_question(
         question_id=arguments.question_id,
         question=arguments.question,
@@ -126,6 +138,7 @@ def main() -> None:
             "query_model": arguments.query_model if arguments.decompose else None,
             "coverage_per_query": arguments.coverage_per_query if arguments.decompose else None,
             "multi_hop": arguments.multi_hop,
+            "neighbor_window": arguments.neighbor_window or None,
         },
     )
     write_traces(arguments.trace, [run.trace])
