@@ -25,7 +25,12 @@ from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import SemanticRetriever
 from rag.reranking import BGEReranker
-from rag.query_transformation import OllamaQueryDecomposer, QueryDecompositionRetriever
+from rag.query_transformation import (
+    MultiHopRetriever,
+    OllamaFollowupQueryGenerator,
+    OllamaQueryDecomposer,
+    QueryDecompositionRetriever,
+)
 from rag.vector_store import PineconeSettings, ensure_index
 
 
@@ -83,6 +88,8 @@ def main() -> None:
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rerank", action="store_true")
     parser.add_argument("--decompose", action="store_true")
+    parser.add_argument("--multi-hop", action="store_true")
+    parser.add_argument("--coverage-per-query", type=int, default=0)
     parser.add_argument("--query-model", default="gemma4")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--chunk-size", type=int, default=500)
@@ -113,9 +120,21 @@ def main() -> None:
             candidate_retriever=hybrid_retriever,
             decomposer=OllamaQueryDecomposer(OllamaChatModel(model=arguments.query_model)),
             candidate_k=arguments.candidate_k,
+            coverage_per_query=arguments.coverage_per_query,
         )
         if arguments.decompose
         else hybrid_retriever
+    )
+    candidate_retriever = (
+        MultiHopRetriever(
+            candidate_retriever=candidate_retriever,
+            followup_generator=OllamaFollowupQueryGenerator(
+                OllamaChatModel(model=arguments.query_model)
+            ),
+            candidate_k=arguments.candidate_k,
+        )
+        if arguments.multi_hop
+        else candidate_retriever
     )
     retriever = (
         RerankingRetriever(
@@ -140,6 +159,8 @@ def main() -> None:
             "rrf_k": 60,
             "reranker_model": arguments.reranker_model if arguments.rerank else None,
             "query_model": arguments.query_model if arguments.decompose else None,
+            "coverage_per_query": arguments.coverage_per_query if arguments.decompose else None,
+            "multi_hop": arguments.multi_hop,
             "judge_model": None if arguments.skip_semantic_judge else arguments.judge_model,
         },
         semantic_judge=(
