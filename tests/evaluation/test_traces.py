@@ -42,6 +42,7 @@ def test_write_traces_creates_one_json_record_per_question(tmp_path) -> None:
             "context_sent_to_model": None,
             "answer": "RM 180 per day.",
             "timing_ms": 420,
+            "generation_usage": None,
             "error": None,
         },
     ]

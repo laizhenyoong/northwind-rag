@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from rag.constants import REFUSAL
+from rag.generation.ollama import OllamaCompletion, OllamaUsage
 from rag.retrieval.semantic import RetrievedPassage
 
 
@@ -43,6 +44,7 @@ class GroundedAnswer:
     text: str
     context: str
     cited_chunk_ids: tuple[str, ...]
+    usage: OllamaUsage | None = None
 
 
 @dataclass(slots=True)
@@ -57,16 +59,17 @@ class GroundedAnswerer:
         if not passages:
             return GroundedAnswer(REFUSAL, context, ())
 
-        response = self.chat_model.complete(
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=(
-                f"Question:\n{question}\n\n"
-                f"Context:\n{context}\n\n"
-                "Answer the question now."
-            ),
+        user_prompt = (
+            f"Question:\n{question}\n\n"
+            f"Context:\n{context}\n\n"
+            "Answer the question now."
         )
+        completion = _complete_with_optional_usage(
+            self.chat_model, system_prompt=SYSTEM_PROMPT, user_prompt=user_prompt
+        )
+        response = completion.text
         if response == REFUSAL:
-            return GroundedAnswer(response, context, ())
+            return GroundedAnswer(response, context, (), completion.usage)
 
         citation_numbers = [int(match) for match in _CITATION_PATTERN.findall(response)]
         if not citation_numbers:
@@ -77,7 +80,19 @@ class GroundedAnswerer:
             raise GroundingError(f"Model answer cited context labels that were not provided: {invalid}")
 
         cited_chunk_ids = tuple(dict.fromkeys(labels[number].chunk_id for number in citation_numbers))
-        return GroundedAnswer(response, context, cited_chunk_ids)
+        return GroundedAnswer(response, context, cited_chunk_ids, completion.usage)
+
+
+def _complete_with_optional_usage(
+    chat_model: ChatModel, *, system_prompt: str, user_prompt: str
+) -> OllamaCompletion:
+    complete_with_usage = getattr(chat_model, "complete_with_usage", None)
+    if callable(complete_with_usage):
+        return complete_with_usage(system_prompt=system_prompt, user_prompt=user_prompt)
+    return OllamaCompletion(
+        text=chat_model.complete(system_prompt=system_prompt, user_prompt=user_prompt),
+        usage=OllamaUsage(),
+    )
 
 
 def build_labeled_context(

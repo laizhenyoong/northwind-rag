@@ -1,4 +1,5 @@
 from rag.generation.grounded import GroundedAnswer
+from rag.generation.ollama import OllamaUsage
 from rag.generation.pipeline import answer_question
 from rag.retrieval.semantic import RetrievedPassage
 
@@ -63,3 +64,32 @@ def test_answer_pipeline_passes_an_explicit_metadata_filter_to_retrieval() -> No
 
     assert retriever.filters == [metadata_filter]
     assert run.trace.pipeline_config["metadata_filter"] == metadata_filter
+
+
+def test_answer_pipeline_persists_generation_usage_when_available() -> None:
+    class UsageAnswerer(FakeAnswerer):
+        def answer(self, question: str, passages: list[RetrievedPassage]) -> GroundedAnswer:
+            return GroundedAnswer(
+                "The domestic per diem is RM 180. [S1]",
+                "[S1] policy context",
+                ("policy.md:0000",),
+                OllamaUsage(prompt_tokens=100, output_tokens=12, total_duration_ms=300),
+            )
+
+    run = answer_question(
+        question_id="Q001",
+        question="What is the domestic rate?",
+        retriever=FakeRetriever(),
+        answerer=UsageAnswerer(),
+        top_k=5,
+        pipeline_config={},
+    )
+
+    assert run.trace.generation_usage == {
+        "prompt_tokens": 100,
+        "output_tokens": 12,
+        "load_duration_ms": None,
+        "prompt_eval_duration_ms": None,
+        "eval_duration_ms": None,
+        "total_duration_ms": 300,
+    }

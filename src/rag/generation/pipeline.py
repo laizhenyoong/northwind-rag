@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 from rag.evaluation.traces import RunTrace
@@ -75,6 +75,7 @@ def answer_question(
         context_sent_to_model=context or None,
         answer=generated_answer.text if generated_answer else None,
         timing_ms=round((time.perf_counter() - started_at) * 1000),
+        generation_usage=asdict(generated_answer.usage) if generated_answer and generated_answer.usage else None,
         error=error,
     )
     return AnswerRun(trace=trace, generated_answer=generated_answer)

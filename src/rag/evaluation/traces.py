@@ -30,6 +30,7 @@ class RunTrace:
     context_sent_to_model: str | None = None
     answer: str | None = None
     timing_ms: int | None = None
+    generation_usage: dict[str, int | None] | None = None
     error: str | None = None
 
 
@@ -60,6 +61,7 @@ def load_traces(path: Path) -> list[RunTrace]:
                     context_sent_to_model=record.get("context_sent_to_model"),
                     answer=record.get("answer"),
                     timing_ms=record.get("timing_ms"),
+                    generation_usage=record.get("generation_usage"),
                     error=record.get("error"),
                 )
             )
