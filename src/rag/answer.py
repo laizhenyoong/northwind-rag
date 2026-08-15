@@ -43,6 +43,11 @@ def main() -> None:
     parser.add_argument("--multi-hop", action="store_true")
     parser.add_argument("--coverage-per-query", type=int, default=0)
     parser.add_argument("--neighbor-window", type=int, default=0)
+    parser.add_argument(
+        "--neighbor-source-k",
+        type=int,
+        help="Expand neighbors only for this many top-ranked chunks.",
+    )
     parser.add_argument("--query-model", default="gemma4")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--document-id")
@@ -57,6 +62,8 @@ def main() -> None:
 
     if (arguments.current or arguments.version or arguments.as_of) and not arguments.document_id:
         parser.error("--document-id is required with --current, --version, or --as-of")
+    if arguments.neighbor_source_k is not None and arguments.neighbor_window < 1:
+        parser.error("--neighbor-source-k requires --neighbor-window")
 
     metadata_filter = None
     if arguments.current:
@@ -116,6 +123,7 @@ def main() -> None:
             arguments.corpus_root,
             chunk_size=arguments.chunk_size,
             neighbor_window=arguments.neighbor_window,
+            neighbor_source_k=arguments.neighbor_source_k,
         )
         if arguments.neighbor_window
         else retriever
@@ -139,6 +147,7 @@ def main() -> None:
             "coverage_per_query": arguments.coverage_per_query if arguments.decompose else None,
             "multi_hop": arguments.multi_hop,
             "neighbor_window": arguments.neighbor_window or None,
+            "neighbor_source_k": arguments.neighbor_source_k,
         },
     )
     write_traces(arguments.trace, [run.trace])

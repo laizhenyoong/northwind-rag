@@ -35,11 +35,14 @@ class NeighborExpandingRetriever:
     candidate_retriever: CandidateRetriever
     chunks: tuple[Chunk, ...]
     neighbor_window: int = 1
+    neighbor_source_k: int | None = None
     _chunks_by_location: dict[tuple[str, int], Chunk] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.neighbor_window < 1:
             raise ValueError("neighbor_window must be at least 1")
+        if self.neighbor_source_k is not None and self.neighbor_source_k < 1:
+            raise ValueError("neighbor_source_k must be at least 1")
         self._chunks_by_location = {
             location: chunk
             for chunk in self.chunks
@@ -54,12 +57,14 @@ class NeighborExpandingRetriever:
         *,
         chunk_size: int = 500,
         neighbor_window: int = 1,
+        neighbor_source_k: int | None = None,
     ) -> NeighborExpandingRetriever:
         """Load the same chunk layout that was used to index the corpus."""
         return cls(
             candidate_retriever=candidate_retriever,
             chunks=tuple(chunk_corpus(load_corpus(corpus_root), chunk_size=chunk_size)),
             neighbor_window=neighbor_window,
+            neighbor_source_k=neighbor_source_k,
         )
 
     def retrieve(
@@ -75,7 +80,8 @@ class NeighborExpandingRetriever:
         )
         expanded = list(passages)
         selected_ids = {passage.chunk_id for passage in passages}
-        for passage in passages:
+        expansion_sources = passages[: self.neighbor_source_k]
+        for passage in expansion_sources:
             location = _location(passage.metadata)
             if location is None:
                 continue

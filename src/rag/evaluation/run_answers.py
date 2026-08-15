@@ -92,6 +92,11 @@ def main() -> None:
     parser.add_argument("--multi-hop", action="store_true")
     parser.add_argument("--coverage-per-query", type=int, default=0)
     parser.add_argument("--neighbor-window", type=int, default=0)
+    parser.add_argument(
+        "--neighbor-source-k",
+        type=int,
+        help="Expand neighbors only for this many top-ranked chunks.",
+    )
     parser.add_argument("--query-model", default="gemma4")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--chunk-size", type=int, default=500)
@@ -105,6 +110,8 @@ def main() -> None:
         if arguments.limit < 1:
             parser.error("--limit must be at least 1")
         questions = questions[: arguments.limit]
+    if arguments.neighbor_source_k is not None and arguments.neighbor_window < 1:
+        parser.error("--neighbor-source-k requires --neighbor-window")
 
     embedder = OllamaEmbedder()
     hybrid_retriever = HybridRetriever(
@@ -153,6 +160,7 @@ def main() -> None:
             Path("data"),
             chunk_size=arguments.chunk_size,
             neighbor_window=arguments.neighbor_window,
+            neighbor_source_k=arguments.neighbor_source_k,
         )
         if arguments.neighbor_window
         else retriever
@@ -174,6 +182,7 @@ def main() -> None:
             "coverage_per_query": arguments.coverage_per_query if arguments.decompose else None,
             "multi_hop": arguments.multi_hop,
             "neighbor_window": arguments.neighbor_window or None,
+            "neighbor_source_k": arguments.neighbor_source_k,
             "judge_model": None if arguments.skip_semantic_judge else arguments.judge_model,
         },
         semantic_judge=(

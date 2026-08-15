@@ -52,3 +52,25 @@ def test_neighbor_expansion_deduplicates_neighbors_of_multiple_ranked_chunks() -
         "policy.md:0000",
         "policy.md:0003",
     ]
+
+
+def test_neighbor_expansion_only_uses_the_requested_top_ranked_sources() -> None:
+    class TwoPassageRetriever:
+        def retrieve(self, question: str, *, top_k: int, metadata_filter=None) -> list[RetrievedPassage]:
+            return [
+                RetrievedPassage("policy.md:0001", "One", 0.9, {"source_path": "data/policy.md", "chunk_index": 1}),
+                RetrievedPassage("policy.md:0003", "Three", 0.8, {"source_path": "data/policy.md", "chunk_index": 3}),
+            ]
+
+    passages = NeighborExpandingRetriever(
+        TwoPassageRetriever(),
+        tuple(chunk(index) for index in range(5)),
+        neighbor_source_k=1,
+    ).retrieve("policy", top_k=2)
+
+    assert [passage.chunk_id for passage in passages] == [
+        "policy.md:0001",
+        "policy.md:0003",
+        "policy.md:0000",
+        "policy.md:0002",
+    ]
