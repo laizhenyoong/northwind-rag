@@ -80,6 +80,57 @@ def test_semantic_judge_keeps_a_bad_model_response_as_an_inspectable_error() -> 
 
     assert judgement.correct is False
     assert judgement.error == "Judge did not return a JSON object"
+    assert judgement.judge_error == "Judge did not return a JSON object"
+
+
+def test_unanswerable_exact_refusal_bypasses_an_inconsistent_llm_judge() -> None:
+    model = FakeChatModel("Not JSON")
+
+    judgement = SemanticAnswerJudge(model).judge(
+        question(answerable=False),
+        trace(question_id="Q079", answer="I don't know based on the provided context."),
+    )
+
+    assert judgement.correct is True
+    assert judgement.proper_refusal is True
+    assert judgement.error is None
+    assert judgement.reason.startswith("Deterministic pass")
+
+
+def test_semantic_summary_excludes_judge_failures_from_quality_denominators() -> None:
+    successful = trace()
+    failed = RunTrace(
+        question_id="Q002",
+        question="What is the old rate?",
+        pipeline_config={},
+        retrieved_chunks=(),
+        error="RuntimeError: answer model unavailable",
+    )
+    second_question = GoldQuestion(
+        id="Q002",
+        question="What is the old rate?",
+        expected_answer="RM 150.",
+        source_files=(),
+        concept="version-conflict",
+        difficulty="easy",
+        answerable=True,
+    )
+    evaluation = evaluate_semantic_answers(
+        [question(), second_question],
+        [successful, failed],
+        judge=SemanticAnswerJudge(
+            FakeChatModel(
+                '{"correct": true, "citation_supported": true, '
+                '"used_correct_version": true, "proper_refusal": false, "reason": "Matches."}'
+            )
+        ),
+    )
+
+    assert evaluation.summary.error_count == 1
+    assert evaluation.summary.pipeline_error_count == 1
+    assert evaluation.summary.judge_error_count == 0
+    assert evaluation.summary.judged_answerable_question_count == 1
+    assert evaluation.summary.correctness_rate == 1.0
 
 
 def test_judge_prompt_rejects_conflicting_historical_values() -> None:

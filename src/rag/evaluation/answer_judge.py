@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
 
+from rag.constants import REFUSAL
 from rag.evaluation.questions import GoldQuestion
 from rag.evaluation.traces import RunTrace
 
@@ -60,6 +61,8 @@ class AnswerJudgement:
     proper_refusal: bool
     reason: str
     error: str | None = None
+    pipeline_error: str | None = None
+    judge_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +73,10 @@ class AnswerJudgementSummary:
     answerable_question_count: int
     unanswerable_question_count: int
     error_count: int
+    pipeline_error_count: int
+    judge_error_count: int
+    judged_answerable_question_count: int
+    judged_unanswerable_question_count: int
     correctness_rate: float
     citation_supported_rate: float
     correct_version_rate: float
@@ -95,7 +102,18 @@ class SemanticAnswerJudge:
         if question.id != trace.question_id:
             raise ValueError(f"Question {question.id} does not match trace {trace.question_id}")
         if trace.error is not None:
-            return _failed_judgement(question.id, f"Pipeline error: {trace.error}")
+            return _failed_judgement(
+                question.id, f"Pipeline error: {trace.error}", pipeline_error=trace.error
+            )
+        if not question.answerable and trace.answer == REFUSAL:
+            return AnswerJudgement(
+                question_id=question.id,
+                correct=True,
+                citation_supported=False,
+                used_correct_version=False,
+                proper_refusal=True,
+                reason="Deterministic pass: the answer exactly matches the required refusal.",
+            )
 
         try:
             response = self.chat_model.complete(
@@ -104,7 +122,7 @@ class SemanticAnswerJudge:
             )
             values = _parse_judgement(response)
         except (RuntimeError, ValueError, json.JSONDecodeError) as error:
-            return _failed_judgement(question.id, str(error))
+            return _failed_judgement(question.id, str(error), judge_error=str(error))
 
         return AnswerJudgement(question_id=question.id, **values)
 
@@ -132,6 +150,8 @@ def evaluate_semantic_answers(
         for question, judgement in zip(questions, judgements, strict=True)
         if not question.answerable
     )
+    judged_answerable = tuple(judgement for judgement in answerable if judgement.error is None)
+    judged_unanswerable = tuple(judgement for judgement in unanswerable if judgement.error is None)
 
     return AnswerJudgementEvaluation(
         judgements=judgements,
@@ -140,14 +160,18 @@ def evaluate_semantic_answers(
             answerable_question_count=len(answerable),
             unanswerable_question_count=len(unanswerable),
             error_count=sum(judgement.error is not None for judgement in judgements),
-            correctness_rate=_mean(judgement.correct for judgement in answerable),
+            pipeline_error_count=sum(judgement.pipeline_error is not None for judgement in judgements),
+            judge_error_count=sum(judgement.judge_error is not None for judgement in judgements),
+            judged_answerable_question_count=len(judged_answerable),
+            judged_unanswerable_question_count=len(judged_unanswerable),
+            correctness_rate=_mean(judgement.correct for judgement in judged_answerable),
             citation_supported_rate=_mean(
-                judgement.citation_supported for judgement in answerable
+                judgement.citation_supported for judgement in judged_answerable
             ),
             correct_version_rate=_mean(
-                judgement.used_correct_version for judgement in answerable
+                judgement.used_correct_version for judgement in judged_answerable
             ),
-            proper_refusal_rate=_mean(judgement.proper_refusal for judgement in unanswerable),
+            proper_refusal_rate=_mean(judgement.proper_refusal for judgement in judged_unanswerable),
         ),
     )
 
@@ -191,7 +215,13 @@ def _parse_judgement(response: str) -> dict[str, bool | str]:
     return {key: value[key] for key in (*required_booleans, "reason")}
 
 
-def _failed_judgement(question_id: str, error: str) -> AnswerJudgement:
+def _failed_judgement(
+    question_id: str,
+    error: str,
+    *,
+    pipeline_error: str | None = None,
+    judge_error: str | None = None,
+) -> AnswerJudgement:
     return AnswerJudgement(
         question_id=question_id,
         correct=False,
@@ -200,6 +230,8 @@ def _failed_judgement(question_id: str, error: str) -> AnswerJudgement:
         proper_refusal=False,
         reason="No semantic judgement was produced.",
         error=error,
+        pipeline_error=pipeline_error,
+        judge_error=judge_error,
     )
 
 
