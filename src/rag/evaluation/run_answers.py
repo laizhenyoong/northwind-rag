@@ -210,7 +210,10 @@ def main() -> None:
             f"citation_supported_rate={semantic.citation_supported_rate:.3f} "
             f"correct_version_rate={semantic.correct_version_rate:.3f} "
             f"proper_refusal_rate={semantic.proper_refusal_rate:.3f} "
-            f"errors={semantic.error_count}"
+            f"judged={semantic.judged_answerable_question_count}"
+            f"/{semantic.judged_unanswerable_question_count} "
+            f"errors={semantic.error_count} "
+            f"(pipeline={semantic.pipeline_error_count} judge={semantic.judge_error_count})"
         )
 
 
