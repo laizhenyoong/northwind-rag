@@ -16,11 +16,20 @@ from rag.evaluation.answer_judge import (
     evaluate_semantic_answers,
     write_judgements,
 )
+from rag.evaluation.judge_agreement import (
+    AgreementReport,
+    LabelAgreement,
+    compare_judgements,
+    disagreements,
+    load_judgements,
+)
 from rag.evaluation.retrieval_metrics import RetrievalMetrics, score_retrieval
 from rag.evaluation.traces import RetrievedChunk, RunTrace, load_traces, write_traces
 
 __all__ = [
+    "AgreementReport",
     "GoldQuestion",
+    "LabelAgreement",
     "AnswerEvaluation",
     "AnswerMetrics",
     "AnswerSummary",
@@ -30,7 +39,10 @@ __all__ = [
     "RetrievedChunk",
     "RetrievalMetrics",
     "RunTrace",
+    "compare_judgements",
+    "disagreements",
     "load_gold_questions",
+    "load_judgements",
     "load_traces",
     "evaluate_answers",
     "evaluate_semantic_answers",
