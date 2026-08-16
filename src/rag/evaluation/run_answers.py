@@ -18,7 +18,7 @@ from rag.evaluation.answer_judge import (
 )
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.traces import RunTrace, write_traces
-from rag.generation import GroundedAnswerer, OllamaChatModel
+from rag.generation import DeepSeekChatModel, GroundedAnswerer, OllamaChatModel
 from rag.generation.pipeline import Answerer, Retriever, answer_question
 from rag.retrieval.hybrid import HybridRetriever
 from rag.retrieval.keyword import KeywordRetriever
@@ -76,15 +76,23 @@ def run_answer_evaluation(
     )
 
 
+def chat_model(provider: str, model: str | None) -> Any:
+    """Build a chat model for the chosen provider, letting it pick its own default."""
+    if provider == "deepseek":
+        return DeepSeekChatModel.from_environment(model=model, timeout_seconds=600.0)
+    return OllamaChatModel(model=model or "gemma4")
+
+
 def main() -> None:
-    """Run the full answer evaluation against Pinecone and local Ollama."""
+    """Run the answer evaluation against Pinecone, with local or hosted generation."""
     parser = argparse.ArgumentParser(description="Evaluate grounded RAG answers")
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
     parser.add_argument("--output", type=Path, default=Path("results/answer-evaluation.jsonl"))
     parser.add_argument(
         "--judgements-output", type=Path, default=Path("results/answer-judgements.jsonl")
     )
-    parser.add_argument("--model", default="gemma4")
+    parser.add_argument("--provider", choices=("ollama", "deepseek"), default="ollama")
+    parser.add_argument("--model")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rerank", action="store_true")
@@ -97,11 +105,11 @@ def main() -> None:
         type=int,
         help="Expand neighbors only for this many top-ranked chunks.",
     )
-    parser.add_argument("--query-model", default="gemma4")
+    parser.add_argument("--query-model")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--chunk-size", type=int, default=500)
     parser.add_argument("--limit", type=int)
-    parser.add_argument("--judge-model", default="gemma4")
+    parser.add_argument("--judge-model")
     parser.add_argument("--skip-semantic-judge", action="store_true")
     arguments = parser.parse_args()
 
@@ -112,6 +120,9 @@ def main() -> None:
         questions = questions[: arguments.limit]
     if arguments.neighbor_source_k is not None and arguments.neighbor_window < 1:
         parser.error("--neighbor-source-k requires --neighbor-window")
+
+    answer_model = chat_model(arguments.provider, arguments.model)
+    query_model = chat_model(arguments.provider, arguments.query_model)
 
     embedder = OllamaEmbedder()
     hybrid_retriever = HybridRetriever(
@@ -127,7 +138,7 @@ def main() -> None:
     candidate_retriever = (
         QueryDecompositionRetriever(
             candidate_retriever=hybrid_retriever,
-            decomposer=OllamaQueryDecomposer(OllamaChatModel(model=arguments.query_model)),
+            decomposer=OllamaQueryDecomposer(query_model),
             candidate_k=arguments.candidate_k,
             coverage_per_query=arguments.coverage_per_query,
         )
@@ -137,9 +148,7 @@ def main() -> None:
     candidate_retriever = (
         MultiHopRetriever(
             candidate_retriever=candidate_retriever,
-            followup_generator=OllamaFollowupQueryGenerator(
-                OllamaChatModel(model=arguments.query_model)
-            ),
+            followup_generator=OllamaFollowupQueryGenerator(query_model),
             candidate_k=arguments.candidate_k,
         )
         if arguments.multi_hop
@@ -168,17 +177,17 @@ def main() -> None:
     evaluation = run_answer_evaluation(
         questions,
         retriever=retriever,
-        answerer=GroundedAnswerer(OllamaChatModel(model=arguments.model)),
+        answerer=GroundedAnswerer(answer_model),
         top_k=arguments.top_k,
         pipeline_config={
             "retrieval_strategy": "semantic-bm25-rrf",
             "embedding_model": embedder.model,
-            "generation_model": arguments.model,
+            "generation_model": answer_model.model,
             "chunk_size": arguments.chunk_size,
             "candidate_k": arguments.candidate_k,
             "rrf_k": 60,
             "reranker_model": arguments.reranker_model if arguments.rerank else None,
-            "query_model": arguments.query_model if arguments.decompose else None,
+            "query_model": query_model.model if arguments.decompose else None,
             "coverage_per_query": arguments.coverage_per_query if arguments.decompose else None,
             "multi_hop": arguments.multi_hop,
             "neighbor_window": arguments.neighbor_window or None,
@@ -188,7 +197,7 @@ def main() -> None:
         semantic_judge=(
             None
             if arguments.skip_semantic_judge
-            else SemanticAnswerJudge(OllamaChatModel(model=arguments.judge_model))
+            else SemanticAnswerJudge(chat_model(arguments.provider, arguments.judge_model))
         ),
     )
     write_traces(arguments.output, list(evaluation.traces))
