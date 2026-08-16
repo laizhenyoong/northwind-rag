@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rag.evaluation.answer_judge import (
     AnswerJudgementEvaluation,
+    ChatModel,
     SemanticAnswerJudge,
     evaluate_semantic_answers,
     write_judgements,
@@ -19,7 +20,7 @@ from rag.evaluation.judge_agreement import (
 )
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.traces import RunTrace, load_traces
-from rag.generation import OllamaChatModel
+from rag.generation import DeepSeekChatModel, OllamaChatModel
 
 
 def rejudge_traces(
@@ -49,7 +50,8 @@ def main() -> None:
     parser.add_argument("--traces", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
-    parser.add_argument("--judge-model", default="gemma4")
+    parser.add_argument("--judge-provider", choices=("ollama", "deepseek"), default="ollama")
+    parser.add_argument("--judge-model")
     parser.add_argument("--judge-timeout", type=float, default=120.0)
     parser.add_argument("--limit", type=int, help="Judge only the first N saved traces.")
     parser.add_argument(
@@ -65,19 +67,14 @@ def main() -> None:
         if arguments.limit < 1:
             parser.error("--limit must be at least 1")
         traces = traces[: arguments.limit]
-    evaluation = rejudge_traces(
-        questions,
-        traces,
-        judge=SemanticAnswerJudge(
-            OllamaChatModel(model=arguments.judge_model, timeout_seconds=arguments.judge_timeout)
-        ),
-    )
+    chat_model = _chat_model(arguments)
+    evaluation = rejudge_traces(questions, traces, judge=SemanticAnswerJudge(chat_model))
     write_judgements(arguments.output, evaluation.judgements)
 
     summary = evaluation.summary
     print(
         f"Wrote {summary.question_count} judgements from {arguments.traces} "
-        f"to {arguments.output} using {arguments.judge_model}. "
+        f"to {arguments.output} using {chat_model.model}. "
         f"correctness_rate={summary.correctness_rate:.3f} "
         f"citation_supported_rate={summary.citation_supported_rate:.3f} "
         f"correct_version_rate={summary.correct_version_rate:.3f} "
@@ -92,8 +89,19 @@ def main() -> None:
         _print_agreement(
             compare_judgements(load_judgements(arguments.compare_with), evaluation.judgements),
             baseline_path=arguments.compare_with,
-            comparison_model=arguments.judge_model,
+            comparison_model=chat_model.model,
         )
+
+
+def _chat_model(arguments: argparse.Namespace) -> ChatModel:
+    """Build the judge's chat model for the chosen provider."""
+    if arguments.judge_provider == "deepseek":
+        return DeepSeekChatModel.from_environment(
+            model=arguments.judge_model, timeout_seconds=arguments.judge_timeout
+        )
+    return OllamaChatModel(
+        model=arguments.judge_model or "gemma4", timeout_seconds=arguments.judge_timeout
+    )
 
 
 def _print_agreement(
