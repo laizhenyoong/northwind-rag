@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any, Mapping
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
@@ -73,8 +73,8 @@ class DeepSeekChatModel:
                 body: dict[str, Any] = json.load(response)
         except HTTPError as error:
             raise RuntimeError(f"DeepSeek rejected the request with HTTP {error.code}") from error
-        except URLError as error:
-            raise RuntimeError(f"Could not reach DeepSeek at {self.host}.") from error
+        except OSError as error:
+            raise RuntimeError(f"Could not reach DeepSeek at {self.host}: {error}") from error
 
         choices = body.get("choices")
         message = choices[0].get("message") if isinstance(choices, list) and choices else None

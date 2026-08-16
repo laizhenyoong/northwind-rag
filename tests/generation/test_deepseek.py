@@ -80,6 +80,18 @@ def test_an_empty_answer_is_refused_rather_than_returned(monkeypatch) -> None:
         DeepSeekChatModel(api_key="k").complete(system_prompt="s", user_prompt="q")
 
 
+def test_a_read_timeout_becomes_a_recordable_failure(monkeypatch) -> None:
+    """A timeout must not escape as OSError, or one slow call kills the whole run."""
+
+    def fake_urlopen(request, timeout):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr("rag.generation.deepseek.urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="Could not reach DeepSeek"):
+        DeepSeekChatModel(api_key="k").complete(system_prompt="s", user_prompt="q")
+
+
 def test_settings_load_from_the_environment() -> None:
     model = DeepSeekChatModel.from_environment(
         {"DEEPSEEK_API_KEY": "secret-key", "DEEPSEEK_MODEL": "deepseek-v4-pro"}
