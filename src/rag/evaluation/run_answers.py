@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rag.chunking import Chunk, chunk_corpus
+from rag.chunking.semantic import chunk_semantic_corpus
 from rag.embeddings import OllamaEmbedder
 from rag.evaluation.answer_metrics import AnswerEvaluation, evaluate_answers
 from rag.evaluation.answer_judge import (
@@ -18,6 +20,7 @@ from rag.evaluation.answer_judge import (
 )
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.traces import RunTrace, write_traces
+from rag.ingestion import load_corpus
 from rag.generation import DeepSeekChatModel, GroundedAnswerer, OllamaChatModel
 from rag.generation.pipeline import Answerer, Retriever, answer_question
 from rag.retrieval.hybrid import HybridRetriever
@@ -83,6 +86,27 @@ def chat_model(provider: str, model: str | None) -> Any:
     return OllamaChatModel(model=model or "gemma4")
 
 
+def corpus_chunks(arguments: argparse.Namespace, embedder: OllamaEmbedder) -> tuple[Chunk, ...]:
+    """Rebuild precisely the chunk layout the chosen Pinecone namespace was indexed with.
+
+    BM25 and neighbor expansion both read chunks from disk rather than Pinecone,
+    so a mismatch here would silently score one chunking strategy against
+    another's vectors.
+    """
+    documents = load_corpus(Path("data"))
+    if arguments.chunking_strategy == "semantic":
+        return tuple(
+            chunk_semantic_corpus(
+                documents,
+                embedder=embedder,
+                chunk_size=arguments.chunk_size,
+                min_chunk_size=arguments.min_chunk_size,
+                similarity_threshold=arguments.similarity_threshold,
+            )
+        )
+    return tuple(chunk_corpus(documents, chunk_size=arguments.chunk_size))
+
+
 def main() -> None:
     """Run the answer evaluation against Pinecone, with local or hosted generation."""
     parser = argparse.ArgumentParser(description="Evaluate grounded RAG answers")
@@ -108,6 +132,12 @@ def main() -> None:
     parser.add_argument("--query-model")
     parser.add_argument("--reranker-model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--chunk-size", type=int, default=500)
+    parser.add_argument(
+        "--chunking-strategy", choices=("markdown-aware", "semantic"), default="markdown-aware"
+    )
+    parser.add_argument("--namespace", default="")
+    parser.add_argument("--min-chunk-size", type=int, default=200)
+    parser.add_argument("--similarity-threshold", type=float, default=0.75)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--judge-model")
     parser.add_argument("--skip-semantic-judge", action="store_true")
@@ -125,14 +155,14 @@ def main() -> None:
     query_model = chat_model(arguments.provider, arguments.query_model)
 
     embedder = OllamaEmbedder()
+    chunks = corpus_chunks(arguments, embedder)
     hybrid_retriever = HybridRetriever(
         semantic_retriever=SemanticRetriever(
             embedder=embedder,
             vector_index=ensure_index(PineconeSettings.from_environment()),
+            namespace=arguments.namespace,
         ),
-        keyword_retriever=KeywordRetriever.from_corpus(
-            Path("data"), chunk_size=arguments.chunk_size
-        ),
+        keyword_retriever=KeywordRetriever(chunks),
         candidate_k=arguments.candidate_k,
     )
     candidate_retriever = (
@@ -164,10 +194,9 @@ def main() -> None:
         else candidate_retriever
     )
     retriever = (
-        NeighborExpandingRetriever.from_corpus(
-            retriever,
-            Path("data"),
-            chunk_size=arguments.chunk_size,
+        NeighborExpandingRetriever(
+            candidate_retriever=retriever,
+            chunks=chunks,
             neighbor_window=arguments.neighbor_window,
             neighbor_source_k=arguments.neighbor_source_k,
         )
@@ -183,6 +212,8 @@ def main() -> None:
             "retrieval_strategy": "semantic-bm25-rrf",
             "embedding_model": embedder.model,
             "generation_model": answer_model.model,
+            "chunking_strategy": arguments.chunking_strategy,
+            "namespace": arguments.namespace,
             "chunk_size": arguments.chunk_size,
             "candidate_k": arguments.candidate_k,
             "rrf_k": 60,
