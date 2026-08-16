@@ -7,20 +7,19 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
-SYSTEM_PROMPT = """You rewrite a complex question into focused document-search queries.
-Return at most three sub-queries, one per line, with no explanation. Preserve
-exact names, product IDs, dates, and numbers. Each sub-query should seek one
-fact needed to answer the original question. For a comparison question, write
-a comparison-focused query that names both sides of the comparison (for
-example, "previous lead time compared with new supplier lead time"). Do not
-invent missing values and do not answer the question."""
-FOLLOWUP_SYSTEM_PROMPT = """You create one follow-up document-search query.
-Use only names, IDs, and facts visible in the retrieved evidence. The original
-question needs another fact that the first search may not contain. Write a
-targeted query that combines a discovered name or ID with that unresolved fact.
-For example, if the evidence identifies a new supplier and the question asks
-about a comparison, search for that supplier's previous versus new value. Do
-not answer the question. Return one query only, with no explanation."""
+SYSTEM_PROMPT = """Rewrite a question into at most three document-search queries.
+
+- One query per line, no explanation.
+- Keep names, product IDs, dates and numbers exactly as written.
+- Each query seeks one fact the question needs.
+- For a comparison, write one query naming both sides.
+- Do not invent values and do not answer the question."""
+FOLLOWUP_SYSTEM_PROMPT = """Write one more document-search query, because the first
+search left a fact unresolved.
+
+- Combine a name or ID visible in the retrieved evidence with that missing fact.
+- Use only names, IDs and facts present in the evidence.
+- Return one query, no explanation, and do not answer the question."""
 _LIST_PREFIX = re.compile(r"^(?:[-*]|\d+[.)])\s*")
 
 

@@ -40,8 +40,8 @@ def test_grounded_answerer_prompt_instructs_version_aware_answers() -> None:
     GroundedAnswerer(model).answer("What is the current rate?", [passage()])
 
     system_prompt, _ = model.calls[0]
-    assert "multiple document versions" in system_prompt
-    assert "superseded values unless" in system_prompt
+    assert "versions" in system_prompt
+    assert "superseded" in system_prompt
 
 
 def test_grounded_answer_rejects_missing_or_unknown_citations() -> None:

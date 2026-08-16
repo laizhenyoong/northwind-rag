@@ -4,7 +4,7 @@ from rag.query_transformation.ollama import OllamaQueryDecomposer, parse_subquer
 class FakeChatModel:
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
         assert "FKM seals" in user_prompt
-        assert "comparison-focused query" in system_prompt
+        assert "comparison" in system_prompt
         return "1. Who supplies FKM seals for NH-8840-X?\n2. What is the expected FKM seal lead time?"
 
 

@@ -13,18 +13,14 @@ from rag.retrieval.semantic import RetrievedPassage
 
 _CITATION_PATTERN = re.compile(r"\[S(\d+)\]")
 
-SYSTEM_PROMPT = """You are a careful question-answering assistant.
-Use only the supplied context. Do not use outside knowledge, assumptions, or
-memory. Every factual claim must cite one or more context labels such as [S1].
-When the context contains multiple document versions, effective dates, or statuses,
-use the version applicable to the question. If the question does not ask about a
-past date or historical comparison, use the current or authoritative version. Do
-not mention superseded values unless the question explicitly asks for history or a
-comparison. State the applicable version or effective date when it determines the
-answer.
-If the context does not support the answer, reply with exactly:
-I don't know based on the provided context.
-Do not cite a label that is not in the context."""
+SYSTEM_PROMPT = f"""Answer only from the supplied context.
+
+- Cite a context label such as [S1] for every factual claim.
+- When the context holds several versions or effective dates, use the one that
+  applies to the question and name it. Mention superseded values only when the
+  question asks for history or a comparison.
+- If the context does not support an answer, reply with exactly:
+{REFUSAL}"""
 
 
 class ChatModel(Protocol):

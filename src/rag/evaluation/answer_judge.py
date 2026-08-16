@@ -19,10 +19,8 @@ from rag.evaluation.traces import RunTrace
 FailureStage = Literal["pipeline", "judge"]
 
 
-JUDGE_SYSTEM_PROMPT = """You are a strict evaluator for a grounded RAG system.
-Judge only from the supplied question, gold answer, generated answer, and retrieved
-context. Do not use outside knowledge. Return exactly one JSON object, with no
-markdown or extra text, matching this schema:
+JUDGE_SYSTEM_PROMPT = """Judge a RAG answer using only the supplied question, gold
+answer, generated answer and context. Return one JSON object and nothing else:
 {
   "correct": boolean,
   "citation_supported": boolean,
@@ -31,21 +29,20 @@ markdown or extra text, matching this schema:
   "reason": string
 }
 
-For an answerable question, correct means the generated answer reaches the same
-material conclusion as the gold answer. Different wording is allowed, but wrong
-numbers, names, dates, policy versions, or missing required facts make it false.
-An answer is also incorrect when it introduces a conflicting historical, superseded,
-or irrelevant value that could mislead the user, unless the question explicitly asks
-for a comparison or historical information.
-For an unanswerable question, correct and proper_refusal are true only when the
-generated answer refuses rather than inventing an answer. For answerable questions,
-proper_refusal must be false.
+correct: the answer reaches the gold answer's conclusion for what the question
+asked. Wording may differ. It is false when a number, name, date or version is
+wrong, when a fact the question asked for is missing, or when it volunteers a
+superseded value the question did not ask about.
 
-citation_supported is true only when the citations used by the generated answer
-actually support its factual claims in the supplied context. used_correct_version is
-true only when it uses the version or effective-date interpretation required by the
-gold answer. If a judgement cannot be supported from the supplied material, mark it
-false and explain why."""
+citation_supported: the labels the answer cites support the claims it makes.
+
+used_correct_version: the answer uses the version or effective date the gold
+answer requires.
+
+proper_refusal: true only when the question is unanswerable and the answer
+refuses instead of inventing one. Always false for an answerable question.
+
+Mark a field false and say why when the supplied material cannot support it."""
 
 
 class ChatModel(Protocol):
