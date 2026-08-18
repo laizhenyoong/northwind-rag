@@ -50,15 +50,14 @@ connects to Pinecone.
 ## Index the corpus
 
 With Ollama running and the `embeddinggemma` model installed, create embeddings
-for the baseline 500-character chunks and upload them to Pinecone:
+for the markdown-aware chunks and upload them to Pinecone:
 
 ```zsh
 python -m rag.indexing
 ```
 
 This can be re-run safely with the same settings: Pinecone upserts records by
-their stable chunk ID. The next step is to query this index for the top five
-semantic matches.
+their stable chunk ID.
 
 ## Retrieve semantic matches
 
@@ -66,8 +65,8 @@ semantic matches.
 python -m rag.retrieval.semantic "What is the domestic per diem rate for business travel?"
 ```
 
-This baseline retrieves by semantic meaning only. It deliberately does not yet
-filter out superseded documents; that is a later metadata-filtering experiment.
+This baseline retrieves by semantic meaning only. It does not filter out
+superseded documents unless a version constraint is given.
 
 ## Measure the baseline
 
@@ -177,7 +176,7 @@ Add a semantic judge to decide whether an answer reaches the same conclusion as
 the gold answer:
 
 ```zsh
-python -m rag.evaluation.run_answers --judge-model gemma4
+python -m rag.evaluation.run_answers
 ```
 
 The judge returns one JSON verdict per question: correctness, whether the cited
