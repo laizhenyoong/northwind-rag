@@ -10,18 +10,23 @@ data/                     Source Markdown documents with YAML metadata
 eval/                     Gold questions and retrieval ground truth
 src/rag/
   ingestion/              Load and normalize source documents
+  chunking/               Split documents into retrievable chunks
+  retrieval/              Find relevant chunks and widen them for answering
+  query_transformation/   Rewrite a question into document-search queries
+  generation/             Answer only from retrieved context
+  evaluation/             Score retrieval and answers separately
 tests/                    Tests that mirror the source-package structure
 results/                  Generated evaluation runs (ignored by Git)
 ```
 
-The pipeline will grow in the same order as `PLAN.md`:
+The pipeline is built in the same order as `PLAN.md`:
 
 1. `ingestion` loads documents and metadata.
-2. `chunking` will create searchable chunks.
+2. `chunking` creates searchable chunks.
 3. `embeddings` converts chunks and queries into vectors through Ollama.
-4. `retrieval` will find relevant chunks.
-5. `generation` will answer only from retrieved context.
-6. `evaluation` will score retrieval and answers separately.
+4. `retrieval` finds relevant chunks and widens them for answering.
+5. `generation` answers only from retrieved context.
+6. `evaluation` scores retrieval and answers separately.
 
 ## Run tests
 
@@ -165,6 +170,91 @@ cited answer, whether citations point to an expected source, and whether the
 unanswerable questions received the exact refusal. These are grounding checks,
 not yet a semantic judgement that different wordings have the same meaning.
 Use `--limit 3` for a quick local smoke run.
+
+## Judge answers by meaning
+
+Add a semantic judge to decide whether an answer reaches the same conclusion as
+the gold answer:
+
+```zsh
+python -m rag.evaluation.run_answers --judge-model gemma4
+```
+
+The judge returns one JSON verdict per question: correctness, whether the cited
+labels support the claims, whether the right version was used, and whether an
+unanswerable question was refused. Verdicts are written to
+`results/answer-judgements.jsonl`. Pass `--skip-semantic-judge` to skip it.
+
+## Widen retrieved chunks before answering
+
+Search works best on small chunks and answering works best on whole passages.
+Three strategies close that gap:
+
+```zsh
+python -m rag.evaluation.run_answers --neighbor-window 1
+python -m rag.evaluation.run_answers --parent-documents --max-document-chars 8000
+python -m rag.evaluation.run_answers --document-scoped --document-k 3
+```
+
+Neighbor expansion appends the chunks either side of each hit. Parent documents
+replace the hit with the file it came from, leaving anything past
+`--max-document-chars` as a chunk. Document scoping searches twice, the second
+time restricted to the files the first pass chose.
+
+## Generate with a hosted model
+
+The same pipeline runs against DeepSeek instead of local Ollama:
+
+```zsh
+python -m rag.evaluation.run_answers --provider deepseek
+```
+
+Set `DEEPSEEK_API_KEY` in `.env`. Embeddings stay local, because the Pinecone
+index was built with `embeddinggemma`.
+
+## Re-judge saved traces
+
+Grading is separate from generation, so a judge can be changed without
+regenerating the answers:
+
+```zsh
+python -m rag.evaluation.rejudge \
+  --traces results/answer-evaluation.jsonl \
+  --output results/answer-judgements-deepseek.jsonl \
+  --judge-provider deepseek
+```
+
+Pass `--compare-with` an existing judgement file to report how far two judges
+agree per label, discounted for the agreement they would reach by chance.
+
+## Compare two answer runs
+
+The correctness rate alone cannot tell a change that did nothing from a change
+that fixed and broke the same number of questions:
+
+```zsh
+python -m rag.evaluation.compare_runs \
+  results/baseline-judgements.jsonl \
+  results/variant-judgements.jsonl
+```
+
+For each label this names the questions the change fixed and broke, and reports
+the chance the split came from noise alone.
+
+## Index semantically chunked documents
+
+The alternative chunker splits where the meaning between neighbouring sentences
+shifts rather than at a character count, into its own Pinecone namespace:
+
+```zsh
+python -m rag.semantic_sync --dry-run
+python -m rag.semantic_sync
+python -m rag.evaluation.run_answers \
+  --chunking-strategy semantic --namespace semantic-v1
+```
+
+BM25 and chunk widening read chunks from disk, so `--chunking-strategy` must
+match the namespace being queried.
 
 ## Retrieve current or historical versions
 
