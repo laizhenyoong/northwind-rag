@@ -26,6 +26,8 @@ from rag.generation.pipeline import Answerer, Retriever, answer_question
 from rag.retrieval.hybrid import HybridRetriever
 from rag.retrieval.keyword import KeywordRetriever
 from rag.retrieval.neighbors import NeighborExpandingRetriever
+from rag.retrieval.parent import ParentDocumentRetriever
+from rag.retrieval.scoped import DocumentScopedRetriever
 from rag.retrieval.reranked import RerankingRetriever
 from rag.retrieval.semantic import SemanticRetriever
 from rag.reranking import BGEReranker
@@ -124,6 +126,10 @@ def main() -> None:
     parser.add_argument("--multi-hop", action="store_true")
     parser.add_argument("--coverage-per-query", type=int, default=0)
     parser.add_argument("--neighbor-window", type=int, default=0)
+    parser.add_argument("--parent-documents", action="store_true")
+    parser.add_argument("--max-document-chars", type=int)
+    parser.add_argument("--document-scoped", action="store_true")
+    parser.add_argument("--document-k", type=int, default=3)
     parser.add_argument(
         "--neighbor-source-k",
         type=int,
@@ -184,6 +190,15 @@ def main() -> None:
         if arguments.multi_hop
         else candidate_retriever
     )
+    candidate_retriever = (
+        DocumentScopedRetriever(
+            candidate_retriever=candidate_retriever,
+            document_k=arguments.document_k,
+            candidate_k=arguments.candidate_k,
+        )
+        if arguments.document_scoped
+        else candidate_retriever
+    )
     retriever = (
         RerankingRetriever(
             candidate_retriever=candidate_retriever,
@@ -192,6 +207,15 @@ def main() -> None:
         )
         if arguments.rerank
         else candidate_retriever
+    )
+    retriever = (
+        ParentDocumentRetriever.from_corpus(
+            retriever,
+            Path("data"),
+            max_document_characters=arguments.max_document_chars,
+        )
+        if arguments.parent_documents
+        else retriever
     )
     retriever = (
         NeighborExpandingRetriever(
@@ -223,6 +247,10 @@ def main() -> None:
             "multi_hop": arguments.multi_hop,
             "neighbor_window": arguments.neighbor_window or None,
             "neighbor_source_k": arguments.neighbor_source_k,
+            "parent_documents": arguments.parent_documents,
+            "max_document_chars": arguments.max_document_chars,
+            "document_scoped": arguments.document_scoped,
+            "document_k": arguments.document_k if arguments.document_scoped else None,
             "judge_model": None if arguments.skip_semantic_judge else arguments.judge_model,
         },
         semantic_judge=(
