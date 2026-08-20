@@ -11,8 +11,8 @@ from rag_tools import NORTHWIND_TOOLS
 app = BedrockAgentCoreApp()
 log = app.logger
 
-# No external MCP servers. The Northwind tools are defined in-process below.
-# To attach one later, append get_streamable_http_mcp_client() to this list.
+# Empty by design: the corpus tools run in-process. Append
+# get_streamable_http_mcp_client() here to attach an external MCP server.
 mcp_clients = []
 
 DEFAULT_SYSTEM_PROMPT = """
@@ -41,14 +41,11 @@ How to answer:
 """
 
 
-# The corpus tools defined in rag_tools.py. Each one is a plain Python function
-# that @tool turned into a spec the model can call.
 tools = list(NORTHWIND_TOOLS)
 
 _INLINE_FUNCTION_NAMES = {getattr(t, "tool_name", None) for t in NORTHWIND_TOOLS} - {None}
 
 
-# Add MCP client to tools if available
 for mcp_client in mcp_clients:
     if mcp_client:
         tools.append(mcp_client)
@@ -57,11 +54,9 @@ for mcp_client in mcp_clients:
 def _make_conversation_manager():
     return NullConversationManager()
 
-# Reuses one Agent per session_id so each session keeps its own in-process
-# conversation history (best-effort; resets on cold start). The cache is bounded
-# to 128 sessions with LRU eviction (least-recently-used is dropped and its
-# history reset) so a single process serving many sessions cannot leak history
-# between them or grow without limit. For durable history, attach a session manager.
+# One Agent per session_id, so sessions cannot see each other's history. The
+# cache is LRU bounded: an evicted session loses its history rather than
+# leaking it. History is in-process only; attach a session manager to persist it.
 def agent_factory():
     cache = OrderedDict()
     def get_or_create_agent(session_id):

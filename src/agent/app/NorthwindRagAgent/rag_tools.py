@@ -1,14 +1,4 @@
-"""Tools that let the agent search, inspect, and read the Northwind corpus.
-
-The @tool decorator turns each function below into something the model can call.
-The docstring becomes the tool's description and the type hints become its JSON
-input schema, so both are part of the contract with the model, not just notes
-for us. A vague docstring is a tool the model will misuse.
-
-Every tool returns a string. That string is fed straight back to the model as
-context, so it is written to be read by a model: short field names, one passage
-per block, and an explicit sentence when there is nothing to report.
-"""
+"""Agent tools for searching, inspecting and reading the Northwind corpus."""
 
 from __future__ import annotations
 
@@ -26,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 CORPUS_ROOT_ENV = "NORTHWIND_CORPUS_ROOT"
 
-# Must match the indexing run that populated Pinecone. BM25 chunks are built
-# here at query time, so a different chunk size would produce chunk ids that do
-# not line up with the semantic ones and fusion would silently degrade.
+# Must match the indexing run that populated Pinecone. BM25 chunks are rebuilt
+# here at query time, and a different size yields chunk ids that do not line up
+# with the semantic ones, which degrades fusion silently.
 CHUNK_SIZE = 500
 CANDIDATE_K = 20
 
@@ -38,12 +28,12 @@ MAX_READ_CHARS = 20_000
 
 
 class CorpusUnavailable(RuntimeError):
-    """Raised when the repository checkout backing the tools cannot be found."""
+    """The repository checkout backing these tools could not be located."""
 
 
 @lru_cache(maxsize=1)
 def _repo_root() -> Path | None:
-    """Walk up from this file to the checkout that holds src/rag and data/."""
+    """Return the checkout that contains the rag package, if there is one."""
     for parent in Path(__file__).resolve().parents:
         if (parent / "src" / "rag").is_dir():
             return parent
@@ -52,7 +42,7 @@ def _repo_root() -> Path | None:
 
 @lru_cache(maxsize=1)
 def _corpus_root() -> Path:
-    """Return the data/ directory, or explain why it is missing."""
+    """Return the corpus directory named by the environment or the checkout."""
     override = os.environ.get(CORPUS_ROOT_ENV, "").strip()
     if override:
         root = Path(override).expanduser().resolve()
@@ -61,7 +51,7 @@ def _corpus_root() -> Path:
         if repo_root is None:
             raise CorpusUnavailable(
                 "The Northwind corpus is not reachable from this process. "
-                f"Set {CORPUS_ROOT_ENV} to the absolute path of the data/ directory."
+                f"Set {CORPUS_ROOT_ENV} to the absolute path of the corpus directory."
             )
         root = repo_root / "data"
     if not root.is_dir():
@@ -70,16 +60,10 @@ def _corpus_root() -> Path:
 
 
 def _import_rag() -> None:
-    """Put the repository's src/ on sys.path so the rag package is importable.
-
-    Done lazily rather than at module import so that a missing checkout produces
-    a readable tool error instead of crashing the whole runtime at startup.
-    """
+    """Put the checkout's src/ on sys.path, lazily so a missing one is catchable."""
     repo_root = _repo_root()
     if repo_root is None:
-        raise CorpusUnavailable(
-            "The rag package is not reachable from this process, so search is unavailable."
-        )
+        raise CorpusUnavailable("The rag package is not reachable from this process")
     source_root = str(repo_root / "src")
     if source_root not in sys.path:
         sys.path.insert(0, source_root)
@@ -87,11 +71,10 @@ def _import_rag() -> None:
 
 @lru_cache(maxsize=1)
 def _retriever() -> Any:
-    """Build the hybrid retriever once and reuse it.
+    """Build the hybrid retriever once.
 
-    Construction is expensive: it opens the Pinecone index and reads, chunks and
-    scores the whole corpus for BM25. Caching turns that into a one-off cost on
-    the first search of a cold process.
+    Construction opens the Pinecone index and reads, chunks and scores the whole
+    corpus for BM25, so it is far too expensive to repeat per call.
     """
     _import_rag()
     from rag.embeddings import OllamaEmbedder
@@ -111,15 +94,14 @@ def _retriever() -> Any:
 
 
 def _resolve_in_corpus(source_path: str) -> Path:
-    """Resolve a model-supplied source_path, refusing anything outside the corpus.
+    """Resolve a source_path, refusing anything outside the corpus.
 
-    The model chooses this argument, so it is untrusted input. Resolving first
-    and then checking containment defeats ../ traversal and symlinks that point
-    out of the corpus.
+    The model chooses this argument, so it is untrusted. Resolving before
+    checking containment is what defeats ../ traversal and escaping symlinks.
     """
-    corpus_root = _corpus_root()
     if not source_path.strip():
         raise ValueError("source_path must not be empty")
+    corpus_root = _corpus_root()
     candidate = (corpus_root.parent / source_path).resolve()
     if not candidate.is_relative_to(corpus_root):
         raise ValueError(f"source_path must stay inside {corpus_root.name}/: got {source_path!r}")
@@ -127,14 +109,39 @@ def _resolve_in_corpus(source_path: str) -> Path:
 
 
 def _read_frontmatter(path: Path) -> dict[str, Any]:
-    """Return one document's YAML frontmatter, or an empty mapping if unreadable."""
-    _import_rag()
+    """Return one document's metadata, or an empty mapping if it cannot be read."""
     from rag.ingestion.markdown import load_markdown_document
 
     try:
         return load_markdown_document(path, corpus_root=_corpus_root()).metadata
     except (ValueError, OSError):
         return {}
+
+
+def _format_passage(position: int, passage: Any) -> str:
+    metadata = passage.metadata
+    header = " | ".join(
+        f"{key}: {metadata[key]}"
+        for key in ("doc_id", "version", "status", "department")
+        if metadata.get(key)
+    )
+    return (
+        f"[{position}] chunk_id: {passage.chunk_id}\n"
+        f"source_path: {metadata.get('source_path', 'unknown')}\n"
+        + (f"{header}\n" if header else "")
+        + f"score: {passage.score:.4f}\n"
+        f"{passage.text}"
+    )
+
+
+def _format_version(metadata: dict[str, Any]) -> str:
+    return (
+        f"- version: {metadata.get('version', 'unversioned')}"
+        f" | status: {metadata.get('status', 'unknown')}"
+        f" | effective_date: {metadata.get('effective_date', 'unknown')}"
+        f" | expiry_date: {metadata.get('expiry_date', 'none')}"
+        f" | source_path: {metadata.get('source_path')}"
+    )
 
 
 @tool
@@ -158,37 +165,24 @@ def search_documents(query: str, top_k: int = 5) -> str:
     """
     if not query.strip():
         return "Error: query must not be empty."
-    top_k = max(1, min(int(top_k), MAX_TOP_K))
-
-    # A tool must hand the model a readable string, never raise. An unhandled
-    # exception here would abort the whole turn; a returned message lets the
-    # model report the problem or try a different tool.
     try:
-        passages = _retriever().retrieve(query, top_k=top_k)
+        limit = max(1, min(int(top_k), MAX_TOP_K))
+    except (TypeError, ValueError):
+        return f"Error: top_k must be a whole number between 1 and {MAX_TOP_K}."
+
+    # A tool returns its failures as text. Raising here would end the turn,
+    # while a message lets the model retry or say what it could not do.
+    try:
+        passages = _retriever().retrieve(query, top_k=limit)
     except Exception as error:  # noqa: BLE001 - tool boundary
-        _retriever.cache_clear()
         logger.exception("search_documents failed for query %r", query)
         return f"Error: search is unavailable. {error}"
 
     if not passages:
         return f"No passages matched {query!r}. Try different wording or a broader phrase."
-
-    blocks = []
-    for position, passage in enumerate(passages, start=1):
-        metadata = passage.metadata
-        header = " | ".join(
-            f"{key}: {metadata[key]}"
-            for key in ("doc_id", "version", "status", "department")
-            if metadata.get(key)
-        )
-        blocks.append(
-            f"[{position}] chunk_id: {passage.chunk_id}\n"
-            f"source_path: {metadata.get('source_path', 'unknown')}\n"
-            + (f"{header}\n" if header else "")
-            + f"score: {passage.score:.4f}\n"
-            f"{passage.text}"
-        )
-    return "\n\n".join(blocks)
+    return "\n\n".join(
+        _format_passage(position, passage) for position, passage in enumerate(passages, start=1)
+    )
 
 
 @tool
@@ -207,38 +201,32 @@ def list_document_versions(doc_id: str) -> str:
         One line per version with its version number, status, effective and
         expiry dates, and source_path.
     """
-    if not doc_id.strip():
+    wanted = doc_id.strip()
+    if not wanted:
         return "Error: doc_id must not be empty."
 
     try:
+        _import_rag()
         corpus_root = _corpus_root()
-    except CorpusUnavailable as error:
-        return f"Error: {error}"
-
-    versions = []
-    for path in sorted(corpus_root.rglob("*.md")):
-        metadata = _read_frontmatter(path)
-        if metadata.get("doc_id") != doc_id.strip():
-            continue
-        versions.append(metadata)
+        versions = [
+            metadata
+            for path in sorted(corpus_root.rglob("*.md"))
+            if (metadata := _read_frontmatter(path)).get("doc_id") == wanted
+        ]
+    except Exception as error:  # noqa: BLE001 - tool boundary
+        logger.exception("list_document_versions failed for doc_id %r", wanted)
+        return f"Error: the corpus could not be listed. {error}"
 
     if not versions:
         return (
-            f"No document has doc_id {doc_id!r}. Run search_documents first and read the "
+            f"No document has doc_id {wanted!r}. Run search_documents first and read the "
             "doc_id from a result's metadata."
         )
 
     versions.sort(key=lambda metadata: str(metadata.get("effective_date", "")), reverse=True)
-    lines = [f"{len(versions)} version(s) of {doc_id}:"]
-    for metadata in versions:
-        lines.append(
-            f"- version: {metadata.get('version', 'unversioned')}"
-            f" | status: {metadata.get('status', 'unknown')}"
-            f" | effective_date: {metadata.get('effective_date', 'unknown')}"
-            f" | expiry_date: {metadata.get('expiry_date', 'none')}"
-            f" | source_path: {metadata.get('source_path')}"
-        )
-    return "\n".join(lines)
+    return "\n".join(
+        [f"{len(versions)} version(s) of {wanted}:", *(_format_version(m) for m in versions)]
+    )
 
 
 @tool
@@ -260,21 +248,25 @@ def read_document(source_path: str, max_chars: int = DEFAULT_READ_CHARS) -> str:
         The document text, truncated with an explicit marker if it is longer
         than max_chars.
     """
-    max_chars = max(1, min(int(max_chars), MAX_READ_CHARS))
+    try:
+        limit = max(1, min(int(max_chars), MAX_READ_CHARS))
+    except (TypeError, ValueError):
+        return f"Error: max_chars must be a whole number between 1 and {MAX_READ_CHARS}."
+
     try:
         path = _resolve_in_corpus(source_path)
-    except (CorpusUnavailable, ValueError) as error:
+        if not path.is_file():
+            return f"Error: no document at {source_path!r}. Use a source_path from a search result."
+        text = path.read_text(encoding="utf-8")
+    except Exception as error:  # noqa: BLE001 - tool boundary
+        logger.exception("read_document failed for source_path %r", source_path)
         return f"Error: {error}"
 
-    if not path.is_file():
-        return f"Error: no document at {source_path!r}. Use a source_path from a search result."
-
-    text = path.read_text(encoding="utf-8")
-    if len(text) <= max_chars:
+    if len(text) <= limit:
         return f"{source_path} ({len(text)} characters)\n\n{text}"
     return (
-        f"{source_path} (truncated to {max_chars} of {len(text)} characters)\n\n"
-        f"{text[:max_chars]}\n\n[TRUNCATED. Call read_document again with a larger max_chars "
+        f"{source_path} (truncated to {limit} of {len(text)} characters)\n\n"
+        f"{text[:limit]}\n\n[TRUNCATED. Call read_document again with a larger max_chars "
         "if the part you need is missing.]"
     )
 
