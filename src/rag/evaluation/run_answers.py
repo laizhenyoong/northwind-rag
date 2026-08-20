@@ -21,7 +21,7 @@ from rag.evaluation.answer_judge import (
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.traces import RunTrace, write_traces
 from rag.ingestion import load_corpus
-from rag.generation import DeepSeekChatModel, GroundedAnswerer, OllamaChatModel
+from rag.generation import BedrockChatModel, DeepSeekChatModel, GroundedAnswerer, OllamaChatModel
 from rag.generation.pipeline import Answerer, Retriever, answer_question
 from rag.retrieval.hybrid import HybridRetriever
 from rag.retrieval.keyword import KeywordRetriever
@@ -85,6 +85,8 @@ def chat_model(provider: str, model: str | None) -> Any:
     """Build a chat model for the chosen provider, letting it pick its own default."""
     if provider == "deepseek":
         return DeepSeekChatModel.from_environment(model=model, timeout_seconds=600.0)
+    if provider == "bedrock":
+        return BedrockChatModel(model=model) if model else BedrockChatModel()
     return OllamaChatModel(model=model or "gemma4")
 
 
@@ -117,7 +119,7 @@ def main() -> None:
     parser.add_argument(
         "--judgements-output", type=Path, default=Path("results/answer-judgements.jsonl")
     )
-    parser.add_argument("--provider", choices=("ollama", "deepseek"), default="ollama")
+    parser.add_argument("--provider", choices=("ollama", "deepseek", "bedrock"), default="ollama")
     parser.add_argument("--model")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--candidate-k", type=int, default=20)
