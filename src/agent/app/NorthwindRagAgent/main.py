@@ -1,11 +1,12 @@
 from typing import Any
 from collections import OrderedDict
-from strands import Agent, tool
+from strands import Agent
 import asyncio
 from strands.agent.conversation_manager.null_conversation_manager import NullConversationManager
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from model.load import load_model
 from mcp_client.client import get_streamable_http_mcp_client
+from rag_tools import NORTHWIND_TOOLS
 
 app = BedrockAgentCoreApp()
 log = app.logger
@@ -15,23 +16,36 @@ log = app.logger
 mcp_clients = []
 
 DEFAULT_SYSTEM_PROMPT = """
-You are a helpful assistant. Use tools when appropriate.
+You are the Northwind Hydraulics document assistant. You answer questions about
+Northwind's internal documents: policies, product specifications, support tickets,
+contracts, meeting notes, onboarding material and the staff directory.
 
+You have no knowledge of Northwind beyond what the tools return. Never answer from
+memory or from general knowledge about hydraulics, and never guess a figure.
+
+How to work:
+- Call search_documents before answering anything about Northwind.
+- If the first results do not cover every part of the question, search again with
+  different wording. Several narrow searches beat one broad one.
+- If a passage is cut off, or a table is missing the row you need, call
+  read_document on that passage's source_path.
+- If the answer depends on which revision of a document applies, call
+  list_document_versions on its doc_id and say which version you used.
+
+How to answer:
+- Ground every factual claim in a retrieved passage and cite its chunk_id, for
+  example [data/policies/travel-expense-v2.1.md:0004].
+- If the documents do not contain the answer, say so plainly and name what you
+  searched for. An honest "not in the corpus" is a correct answer.
+- Be concise. Prefer the document's own wording for figures, dates and rules.
 """
 
 
-# Define a collection of tools used by the model
-tools = []
+# The corpus tools defined in rag_tools.py. Each one is a plain Python function
+# that @tool turned into a spec the model can call.
+tools = list(NORTHWIND_TOOLS)
 
-_INLINE_FUNCTION_NAMES = set()
-
-# Define a simple function tool
-@tool
-def add_numbers(a: int, b: int) -> int:
-    """Return the sum of two numbers"""
-    return a+b
-tools.append(add_numbers)
-
+_INLINE_FUNCTION_NAMES = {getattr(t, "tool_name", None) for t in NORTHWIND_TOOLS} - {None}
 
 
 # Add MCP client to tools if available
