@@ -14,7 +14,12 @@ dependencies = [
     "botocore[crt] >= 1.35.0",
     "mcp ~= 1.24.0",
     "strands-agents >= 1.15.0",
-    
+    # The Northwind corpus tools in rag_tools.py reuse the repository's rag
+    # package. These are its query-time dependencies. The BGE reranker is
+    # deliberately left out: it would pull in torch for no Tier A benefit.
+    "pinecone >= 7.0",
+    "python-dotenv >= 1.0",
+    "PyYAML >= 6.0",
 ]
 
 [tool.hatch.build.targets.wheel]
