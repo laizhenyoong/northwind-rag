@@ -20,7 +20,7 @@ from rag.evaluation.judge_agreement import (
 )
 from rag.evaluation.questions import GoldQuestion, load_gold_questions
 from rag.evaluation.traces import RunTrace, load_traces
-from rag.generation import DeepSeekChatModel, OllamaChatModel
+from rag.generation import BedrockChatModel, DeepSeekChatModel, OllamaChatModel
 
 
 def rejudge_traces(
@@ -28,6 +28,7 @@ def rejudge_traces(
     traces: Sequence[RunTrace],
     *,
     judge: SemanticAnswerJudge,
+    workers: int = 1,
 ) -> AnswerJudgementEvaluation:
     """Judge saved traces, scoring only the questions the trace file covers.
 
@@ -39,7 +40,7 @@ def rejudge_traces(
     if not covered_questions:
         raise ValueError("No gold question matches any trace in the file")
 
-    return evaluate_semantic_answers(covered_questions, traces, judge=judge)
+    return evaluate_semantic_answers(covered_questions, traces, judge=judge, workers=workers)
 
 
 def main() -> None:
@@ -50,9 +51,10 @@ def main() -> None:
     parser.add_argument("--traces", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--questions", type=Path, default=Path("eval/gold_questions.jsonl"))
-    parser.add_argument("--judge-provider", choices=("ollama", "deepseek"), default="ollama")
+    parser.add_argument("--judge-provider", choices=("ollama", "deepseek", "bedrock"), default="ollama")
     parser.add_argument("--judge-model")
     parser.add_argument("--judge-timeout", type=float, default=120.0)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--limit", type=int, help="Judge only the first N saved traces.")
     parser.add_argument(
         "--compare-with",
@@ -68,7 +70,9 @@ def main() -> None:
             parser.error("--limit must be at least 1")
         traces = traces[: arguments.limit]
     chat_model = _chat_model(arguments)
-    evaluation = rejudge_traces(questions, traces, judge=SemanticAnswerJudge(chat_model))
+    evaluation = rejudge_traces(
+        questions, traces, judge=SemanticAnswerJudge(chat_model), workers=arguments.workers
+    )
     write_judgements(arguments.output, evaluation.judgements)
 
     summary = evaluation.summary
@@ -98,6 +102,11 @@ def _chat_model(arguments: argparse.Namespace) -> ChatModel:
     if arguments.judge_provider == "deepseek":
         return DeepSeekChatModel.from_environment(
             model=arguments.judge_model, timeout_seconds=arguments.judge_timeout
+        )
+    if arguments.judge_provider == "bedrock":
+        return BedrockChatModel(
+            model=arguments.judge_model or BedrockChatModel.model,
+            timeout_seconds=arguments.judge_timeout,
         )
     return OllamaChatModel(
         model=arguments.judge_model or "gemma4", timeout_seconds=arguments.judge_timeout

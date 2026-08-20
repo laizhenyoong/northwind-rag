@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 import re
 import statistics
 from collections import Counter
@@ -123,6 +124,7 @@ def evaluate_semantic_answers(
     traces: Sequence[RunTrace],
     *,
     judge: SemanticAnswerJudge,
+    workers: int = 1,
 ) -> AnswerJudgementEvaluation:
     """Judge every trace and compute answerable and refusal quality rates."""
     traces_by_question_id = {trace.question_id: trace for trace in traces}
@@ -130,7 +132,17 @@ def evaluate_semantic_answers(
     if missing:
         raise ValueError(f"Missing answer traces for: {', '.join(missing)}")
 
-    judgements = tuple(judge.judge(question, traces_by_question_id[question.id]) for question in questions)
+    if workers > 1:
+        # Judging is one independent network call per question, so it parallelises
+        # cleanly. pool.map preserves input order, which the aggregation relies on.
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            judgements = tuple(
+                pool.map(lambda question: judge.judge(question, traces_by_question_id[question.id]), questions)
+            )
+    else:
+        judgements = tuple(
+            judge.judge(question, traces_by_question_id[question.id]) for question in questions
+        )
     answerable = tuple(
         judgement
         for question, judgement in zip(questions, judgements, strict=True)
