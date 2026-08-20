@@ -14,6 +14,9 @@ from rag.evaluation.traces import RunTrace
 
 
 _CITATION_PATTERN = re.compile(r"\[S(\d+)\]")
+# Agentic runs cite the chunk id itself, which the pipeline runs cannot do
+# because their labels are positions in one fixed context block.
+_CHUNK_CITATION_PATTERN = re.compile(r"\[([^\[\]\s]+\.md:\d+)\]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,10 +61,20 @@ def score_answer(question: GoldQuestion, trace: RunTrace) -> AnswerMetrics:
     answer = trace.answer or ""
     refused = answer == REFUSAL
     cited_ranks = [int(match) for match in _CITATION_PATTERN.findall(answer)]
+    cited_chunk_ids = _CHUNK_CITATION_PATTERN.findall(answer)
     chunks_by_rank = {chunk.rank: chunk for chunk in trace.retrieved_chunks}
-    citations_valid = bool(cited_ranks) and all(rank in chunks_by_rank for rank in cited_ranks)
+    chunks_by_id = {chunk.chunk_id: chunk for chunk in trace.retrieved_chunks}
+    citations_valid = (
+        bool(cited_ranks or cited_chunk_ids)
+        and all(rank in chunks_by_rank for rank in cited_ranks)
+        and all(chunk_id in chunks_by_id for chunk_id in cited_chunk_ids)
+    )
     cited_sources = {
         chunks_by_rank[rank].source_path for rank in cited_ranks if rank in chunks_by_rank
+    } | {
+        chunks_by_id[chunk_id].source_path
+        for chunk_id in cited_chunk_ids
+        if chunk_id in chunks_by_id
     }
     cites_expected_source = citations_valid and bool(cited_sources & set(question.source_files))
 
